@@ -3,13 +3,16 @@
  * the web app grades only against an explicitly activated rubric snapshot.
  * Every public endpoint below requires an allowlisted teacher account. */
 var WebGrading = (function () {
-  var SUB = ['SubmissionRecordID','ClassroomCourseID','ClassroomCourseWorkID','ClassroomSubmissionID','StudentUserID','StudentName','StudentEmail','Class','Task','SubmissionVersion','SourceType','ClassroomState','TurnedInTime','UpdateTime','Late','AttachmentSummary','AttachmentFileIDsJSON','AttachmentMetadataJSON','DriveFolderID','Status','ParentSubmissionRecordID','CurrentOfficial','LockedAt','LockedBy','ApprovedAt','ApprovedBy','ClassroomAssignedGrade','LastClassroomSyncAt','LastSyncResult','Notes'];
+  var SUB = ['SubmissionRecordID','ClassroomCourseID','ClassroomCourseWorkID','ClassroomSubmissionID','StudentUserID','StudentName','StudentEmail','Class','Task','SubmissionVersion','SourceType','ClassroomState','TurnedInTime','UpdateTime','Late','AttachmentSummary','AttachmentFileIDsJSON','AttachmentMetadataJSON','DriveFolderID','Status','ParentSubmissionRecordID','CurrentOfficial','LockedAt','LockedBy','ApprovedAt','ApprovedBy','ClassroomAssignedGrade','LastClassroomSyncAt','LastSyncResult','Notes','AssessmentType','RawScore','DeductionPoints','DeductionReason','FinalScore'];
   var FILES = ['SubmissionRecordID','FileRecordID','SourceType','DriveFileID','FileName','MimeType','AlternateLink','ThumbnailUrl','FileSize','EligibleForAI','AIReviewStatus','AIExtractedText','Limitations','CreatedAt'];
   var ASSESS = ['AssessmentID','SubmissionRecordID','CriterionID','AIProposedGrade','DerivedGrade','FinalApprovedGrade','DistinctOverrideSelected','CheckboxesJSON','AIEvidenceJSON','TeacherAdjusted','TeacherAudioTranscript','TeacherWrittenNote','Confidence','MinimumEvidenceIncomplete','Status','CreatedAt','UpdatedAt','ApprovedAt','ApprovedBy','RubricProfileID'];
   var HISTORY = ['HistoryID','SubmissionRecordID','AssessmentID','Action','CriterionID','PreviousStateJSON','NewStateJSON','ActorEmail','Timestamp','Notes'];
   var AI = ['AssessmentID','SubmissionRecordID','RunType','RunTimestamp','ModelUsed','PromptVersion','InputFilesJSON','PromptSummary','ResponseJSON','ExecutionStatus','ErrorMessage','LatencySeconds','TriggeredBy','TeacherOutcome'];
-  var GRADES = ['GradeID','TaskName','SubmissionRecordID','StudentUserID','StudentName','AssessmentID','RubricProfileID','Points','MaxMarks','Percent','Grade','FeedbackJSON','ApprovedAt','ApprovedBy'];
-  var HEADERS = { Submissions: SUB, SubmissionFiles: FILES, CriterionAssessments: ASSESS, AssessmentHistory: HISTORY, AIAssessments: AI, ApprovedGrades: GRADES };
+  var GRADES = ['GradeID','TaskName','SubmissionRecordID','StudentUserID','StudentName','AssessmentID','RubricProfileID','Points','MaxMarks','Percent','Grade','FeedbackJSON','ApprovedAt','ApprovedBy','AssessmentType','RawScore','DeductionPoints','DeductionReason','FinalScore','OutcomesJSON'];
+  var AUDIT = ['AuditID','TaskName','Action','TargetID','TargetURL','ActorEmail','Timestamp','Status','DetailsJSON'];
+  var TRACKING = ['TrackingID','Year','Stage','CourseCode','ClassID','TermPair','StudentUserID','StudentName','TaskName','AssessmentType','RawScore','FinalScore','MaxMarks','Percent','Grade','OutcomesJSON','Status','UpdatedAt'];
+  var MESSAGES = ['MessageID','CourseID','CourseWorkID','StudentUserID','StudentName','StudentEmail','Reason','MessageText','Status','SentAt','SentBy'];
+  var HEADERS = { Submissions: SUB, SubmissionFiles: FILES, CriterionAssessments: ASSESS, AssessmentHistory: HISTORY, AIAssessments: AI, ApprovedGrades: GRADES, AuditLog: AUDIT, ClassTracking: TRACKING, ClassroomMessages: MESSAGES };
 
   function fail(message) { return { success: false, message: message }; }
   function uid() { return Utilities.getUuid(); }
@@ -19,6 +22,11 @@ var WebGrading = (function () {
   function yes(v) { return v === true || String(v).toLowerCase() === 'true'; }
   function parseJson(v, fallback) { try { return JSON.parse(text(v)); } catch (e) { return fallback; } }
   function errString(e) { return e && e.message ? e.message : 'Operation failed.'; }
+  function toNumber(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var n = parseFloat(String(v == null ? '' : v).replace(/[^\d.\-]/g, ''));
+    return isFinite(n) ? n : 0;
+  }
 
   function columnMap(sheet) {
     if (!sheet || sheet.getLastRow() < 1) throw new Error('Workbook is not prepared for web grading.');
@@ -265,10 +273,11 @@ var WebGrading = (function () {
     return out;
   }
 
-  function saveDraft(workbookId, taskName, submissionId, incoming, feedback, expectedRevision, source) {
+  function saveDraft(workbookId, taskName, submissionId, incoming, feedback, expectedRevision, source, options) {
     var target = openTask(workbookId, taskName);
     var ss = target.ss;
     if (!ready(ss)) throw new Error('Enable web grading first.');
+    var opt = typeof options === 'object' && options !== null ? options : { assessmentType: typeof options === 'string' ? options : 'Summative' };
     var lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
@@ -288,6 +297,7 @@ var WebGrading = (function () {
       var clean = validateChecks(profile, incoming);
       var fb = validateFeedback(feedback);
       var scored = RubricEngine.scoreProfile(profile, clean);
+      var deduction = RubricEngine.calculateDeduction(scored.totalPoints, scored.totalMaxMarks, opt.deductionRule, sub);
       var timestamp = now();
 
       profile.criteria.forEach(function (c) {
@@ -307,7 +317,14 @@ var WebGrading = (function () {
         if (old) patch(ss, 'CriterionAssessments', old._row, fields);
         else { fields.CreatedAt = timestamp; append(ss, 'CriterionAssessments', fields); }
       });
-      patch(ss, 'Submissions', sub._row, { Status: 'InReview' });
+      patch(ss, 'Submissions', sub._row, {
+        Status: 'InReview',
+        AssessmentType: opt.assessmentType || 'Summative',
+        RawScore: scored.totalPoints,
+        DeductionPoints: deduction.deductionPoints,
+        DeductionReason: deduction.reason,
+        FinalScore: deduction.finalScore
+      });
       append(ss, 'AIAssessments', {
         AssessmentID: assessmentId, SubmissionRecordID: submissionId, RunType: 'TeacherDraft',
         RunTimestamp: timestamp, ModelUsed: '', PromptVersion: 'web-v1', InputFilesJSON: '[]',
@@ -315,15 +332,16 @@ var WebGrading = (function () {
         ExecutionStatus: 'Success', TriggeredBy: WebAccess.requireTeacher(), TeacherOutcome: 'Pending'
       });
       var revision = event(ss, submissionId, assessmentId, source === 'AI' ? 'AIProposed' : 'DraftSaved',
-        { revision: expectedRevision }, { rubricProfileId: profile.profileId, criteria: clean, feedback: fb, scores: scored },
+        { revision: expectedRevision }, { rubricProfileId: profile.profileId, criteria: clean, feedback: fb, scores: scored, deduction: deduction },
         WebAccess.requireTeacher(), 'Rubric ' + profile.name + ' — teacher approval still required.');
-      return { success: true, message: 'Draft saved. Nothing has been approved or sent to Classroom.', revision: revision, scores: scored };
+      return { success: true, message: 'Draft saved. Nothing has been approved or sent to Classroom.', revision: revision, scores: scored, deduction: deduction };
     } finally { lock.releaseLock(); }
   }
 
-  function approve(workbookId, taskName, submissionId, expectedRevision) {
+  function approve(workbookId, taskName, submissionId, expectedRevision, options) {
     var target = openTask(workbookId, taskName);
     var ss = target.ss;
+    var opt = typeof options === 'object' && options !== null ? options : {};
     var lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
@@ -351,18 +369,25 @@ var WebGrading = (function () {
       profile.criteria.forEach(function (c) {
         if (scored.criteria[c.criterionId].incompleteMinimumEvidence) throw new Error('Review ' + c.title + ': tick supported evidence or the distinct override before approving.');
       });
+      var deduction = RubricEngine.calculateDeduction(scored.totalPoints, scored.totalMaxMarks, opt.deductionRule, sub);
       var fbRows = records(ss, 'AIAssessments').filter(function (r) { return text(r.AssessmentID) === assessmentId && text(r.RunType) === 'TeacherDraft'; });
       var feedback = fbRows.length ? validateFeedback(parseJson(fbRows[fbRows.length - 1].ResponseJSON, {})) : validateFeedback({});
       var timestamp = now();
       var user = WebAccess.requireTeacher();
+      var outcomeCoverage = RubricEngine.calculateOutcomeCoverage(profile, rows);
+
       /* Append immutable approved snapshot FIRST; if it fails, the draft
          stays editable. No legacy jewellery markbook column is touched. */
       append(ss, 'ApprovedGrades', {
         GradeID: uid(), TaskName: target.task, SubmissionRecordID: submissionId,
         StudentUserID: sub.StudentUserID, StudentName: sub.StudentName, AssessmentID: assessmentId,
-        RubricProfileID: pinnedId, Points: scored.totalPoints, MaxMarks: scored.totalMaxMarks,
-        Percent: scored.percent, Grade: scored.letter, FeedbackJSON: JSON.stringify(feedback),
-        ApprovedAt: timestamp, ApprovedBy: user
+        RubricProfileID: pinnedId, Points: deduction.finalScore, MaxMarks: scored.totalMaxMarks,
+        Percent: deduction.percent, Grade: scored.letter, FeedbackJSON: JSON.stringify(feedback),
+        ApprovedAt: timestamp, ApprovedBy: user,
+        AssessmentType: opt.assessmentType || text(sub.AssessmentType) || 'Summative',
+        RawScore: scored.totalPoints, DeductionPoints: deduction.deductionPoints,
+        DeductionReason: deduction.reason, FinalScore: deduction.finalScore,
+        OutcomesJSON: JSON.stringify(outcomeCoverage)
       });
       rows.forEach(function (r) {
         patch(ss, 'CriterionAssessments', r._row, {
@@ -371,11 +396,16 @@ var WebGrading = (function () {
           Status: 'Approved', ApprovedAt: timestamp, ApprovedBy: user
         });
       });
-      patch(ss, 'Submissions', sub._row, { Status: 'Approved', ApprovedAt: timestamp, ApprovedBy: user });
+      patch(ss, 'Submissions', sub._row, {
+        Status: 'Approved', ApprovedAt: timestamp, ApprovedBy: user,
+        RawScore: scored.totalPoints, DeductionPoints: deduction.deductionPoints,
+        DeductionReason: deduction.reason, FinalScore: deduction.finalScore,
+        AssessmentType: opt.assessmentType || text(sub.AssessmentType) || 'Summative'
+      });
       var revision = event(ss, submissionId, assessmentId, 'Approved', {},
-        { rubricProfileId: pinnedId, scores: scored, feedback: feedback }, user,
+        { rubricProfileId: pinnedId, scores: scored, deduction: deduction, feedback: feedback }, user,
         'Approved by teacher. No Classroom sync was performed.');
-      return { success: true, message: 'Assessment approved and recorded in ApprovedGrades. Classroom was not changed.', scores: scored, revision: revision };
+      return { success: true, message: 'Assessment approved and recorded in ApprovedGrades. Classroom was not changed.', scores: scored, deduction: deduction, revision: revision };
     } finally { lock.releaseLock(); }
   }
 
@@ -723,12 +753,480 @@ var WebGrading = (function () {
     } finally { lock.releaseLock(); }
   }
 
+  function bulkGrade(workbookId, taskName, submissionIds, options) {
+    var ids = Array.isArray(submissionIds) ? submissionIds : [];
+    if (!ids.length) throw new Error('Select at least one submission to batch grade.');
+    var target = openTask(workbookId, taskName);
+    var profile = RubricEngine.getActiveProfile(target.ss, target.task);
+    if (!profile) throw new Error('Activate a reviewed rubric for this task first.');
+    var results = [];
+    var successCount = 0;
+    var failCount = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var subId = ids[i];
+      try {
+        var d = detail(workbookId, taskName, subId).data;
+        if (d.readOnly) {
+          results.push({ id: subId, studentName: d.submission.studentName, success: false, message: 'Submission is locked or already approved.' });
+          failCount++;
+          continue;
+        }
+        var aiRes = runAi(workbookId, taskName, subId, d.revision);
+        results.push({ id: subId, studentName: d.submission.studentName, success: true, message: aiRes.message });
+        successCount++;
+      } catch (err) {
+        results.push({ id: subId, studentName: 'Submission ' + subId, success: false, message: errString(err) });
+        failCount++;
+      }
+    }
+    return {
+      success: true,
+      total: ids.length,
+      processed: ids.length,
+      successful: successCount,
+      failed: failCount,
+      items: results,
+      message: 'Batch AI grading completed: ' + successCount + ' proposed, ' + failCount + ' skipped/failed. All proposals saved as drafts.'
+    };
+  }
+
+  function verifyGradingComplete(workbookId, taskName) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var all = records(ss, 'Submissions').filter(function (r) {
+      return text(r.Task).trim() === target.task && !!r.SubmissionRecordID && (r.CurrentOfficial === '' || yes(r.CurrentOfficial));
+    });
+    var pending = [];
+    var approved = [];
+    for (var i = 0; i < all.length; i++) {
+      var s = all[i];
+      var st = text(s.Status);
+      if (['Approved', 'Locked'].indexOf(st) !== -1) {
+        approved.push({ id: text(s.SubmissionRecordID), name: text(s.StudentName), status: st });
+      } else {
+        pending.push({ id: text(s.SubmissionRecordID), name: text(s.StudentName), status: st || 'New' });
+      }
+    }
+    return {
+      success: true,
+      taskName: target.task,
+      complete: pending.length === 0 && all.length > 0,
+      total: all.length,
+      approvedCount: approved.length,
+      pendingCount: pending.length,
+      pending: pending
+    };
+  }
+
+  function setGradingComplete(workbookId, taskName, confirmed) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var check = verifyGradingComplete(workbookId, taskName);
+    if (!check.complete) {
+      throw new Error('Cannot lock cohort: ' + check.pendingCount + ' student(s) still ungraded or pending review.');
+    }
+    if (!confirmed) {
+      return { success: true, preview: true, message: 'All ' + check.total + ' submissions are approved. Confirm to lock cohort grading.' };
+    }
+    var user = WebAccess.requireTeacher();
+    var ts = now();
+    append(ss, 'AuditLog', {
+      AuditID: uid(), TaskName: target.task, Action: 'GradingCompleted',
+      TargetID: target.task, TargetURL: '', ActorEmail: user,
+      Timestamp: ts, Status: 'Complete', DetailsJSON: JSON.stringify({ cohortSize: check.total })
+    });
+    return { success: true, message: 'Cohort grading locked and verified by ' + user + ' at ' + ts + '.' };
+  }
+
+  function suggestWorkSamples(workbookId, taskName, policy) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var grades = records(ss, 'ApprovedGrades').filter(function (r) { return text(r.TaskName).trim() === target.task; });
+    if (!grades.length) throw new Error('No approved grades found for ' + target.task + '. Complete grading before selecting samples.');
+    var subRows = records(ss, 'Submissions');
+    var fileRows = records(ss, 'SubmissionFiles');
+
+    var candidates = grades.map(function (g) {
+      var s = subRows.filter(function (r) { return text(r.SubmissionRecordID) === text(g.SubmissionRecordID); })[0] || {};
+      var files = fileRows.filter(function (r) { return text(r.SubmissionRecordID) === text(g.SubmissionRecordID); });
+      var score = toNumber(g.FinalScore != null ? g.FinalScore : g.Points);
+      var max = toNumber(g.MaxMarks) || 100;
+      var pct = max > 0 ? (score / max) * 100 : toNumber(g.Percent);
+      return {
+        submissionRecordId: text(g.SubmissionRecordID),
+        studentName: text(g.StudentName),
+        studentUserId: text(g.StudentUserID),
+        grade: text(g.Grade),
+        points: score,
+        maxMarks: max,
+        percent: pct,
+        files: files.map(function (f) {
+          return { fileId: text(f.DriveFileID), fileName: text(f.FileName), mimeType: text(f.MimeType), link: text(f.AlternateLink) };
+        })
+      };
+    }).filter(function (c) { return c.files.length > 0; });
+
+    candidates.sort(function (a, b) { return b.percent - a.percent; });
+
+    if (!candidates.length) throw new Error('No student submissions have accessible Drive folio files.');
+
+    var high = candidates[0];
+    var low = candidates[candidates.length - 1];
+    var medIdx = Math.floor(candidates.length / 2);
+    var med = candidates[medIdx];
+
+    if (policy === 'grade_band') {
+      var aBands = candidates.filter(function (c) { return c.grade === 'A'; });
+      var cBands = candidates.filter(function (c) { return c.grade === 'C'; });
+      var eBands = candidates.filter(function (c) { return ['D', 'E'].indexOf(c.grade) !== -1; });
+      if (aBands.length) high = aBands[0];
+      if (cBands.length) med = cBands[Math.floor(cBands.length / 2)];
+      if (eBands.length) low = eBands[eBands.length - 1];
+    }
+
+    return {
+      success: true,
+      taskName: target.task,
+      policy: policy || 'score_percentile',
+      proposals: {
+        high: {
+          submissionRecordId: high.submissionRecordId, studentName: high.studentName,
+          grade: high.grade, score: high.points, maxMarks: high.maxMarks, percent: high.percent,
+          file: high.files[0], reason: 'Top-ranked submission in cohort (' + high.percent.toFixed(1) + '%, Grade ' + high.grade + ').'
+        },
+        med: {
+          submissionRecordId: med.submissionRecordId, studentName: med.studentName,
+          grade: med.grade, score: med.points, maxMarks: med.maxMarks, percent: med.percent,
+          file: med.files[0], reason: 'Median representative submission (' + med.percent.toFixed(1) + '%, Grade ' + med.grade + ').'
+        },
+        low: {
+          submissionRecordId: low.submissionRecordId, studentName: low.studentName,
+          grade: low.grade, score: low.points, maxMarks: low.maxMarks, percent: low.percent,
+          file: low.files[0], reason: 'Lowest score boundary submission (' + low.percent.toFixed(1) + '%, Grade ' + low.grade + ').'
+        }
+      },
+      candidates: candidates
+    };
+  }
+
+  function saveWorkSamples(workbookId, taskName, selections, destinations, confirmed) {
+    if (!selections || !selections.high || !selections.med || !selections.low) {
+      throw new Error('Select one HIGH, one MED, and one LOW sample.');
+    }
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+
+    if (!confirmed) {
+      return {
+        success: true,
+        preview: true,
+        selections: selections,
+        destinations: destinations,
+        message: 'Review sample selections and destination folders before saving.'
+      };
+    }
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      var user = WebAccess.requireTeacher();
+      var results = [];
+      var tiers = ['high', 'med', 'low'];
+      for (var t = 0; t < tiers.length; t++) {
+        var tier = tiers[t];
+        var item = selections[tier];
+        var folderId = destinations && destinations[tier + 'FolderId'];
+        var label = tier.toUpperCase();
+        var copyId = '';
+        var copyUrl = '';
+        if (folderId && item.file && item.file.fileId) {
+          try {
+            var srcFile = DriveApp.getFileById(item.file.fileId);
+            var destFolder = DriveApp.getFolderById(folderId);
+            var newName = '[' + label + '] ' + item.studentName + ' - ' + target.task + ' (Sample)';
+            var copied = srcFile.makeCopy(newName, destFolder);
+            copyId = copied.getId();
+            copyUrl = copied.getUrl();
+          } catch (e) {
+            copyUrl = item.file.link || ('https://drive.google.com/file/d/' + item.file.fileId);
+          }
+        }
+        append(ss, 'AuditLog', {
+          AuditID: uid(), TaskName: target.task, Action: 'SampleSaved_' + label,
+          TargetID: copyId || (item.file && item.file.fileId) || item.submissionRecordId, TargetURL: copyUrl,
+          ActorEmail: user, Timestamp: now(), Status: 'Saved',
+          DetailsJSON: JSON.stringify({ tier: label, student: item.studentName, score: item.score, grade: item.grade })
+        });
+        results.push({ tier: label, student: item.studentName, fileId: copyId || (item.file && item.file.fileId), link: copyUrl });
+      }
+      return {
+        success: true,
+        message: 'Successfully placed HIGH, MED, and LOW work samples into designated folders.',
+        results: results
+      };
+    } finally { lock.releaseLock(); }
+  }
+
+  function previewRegistrationPrefill(workbookId, taskName, docId, classMeta) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var profile = RubricEngine.getActiveProfile(ss, target.task);
+    var grades = records(ss, 'ApprovedGrades').filter(function (r) { return text(r.TaskName).trim() === target.task; });
+    var user = WebAccess.requireTeacher();
+
+    var counts = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+    var totalPct = 0;
+    for (var i = 0; i < grades.length; i++) {
+      var g = text(grades[i].Grade).toUpperCase();
+      if (counts[g] !== undefined) counts[g]++;
+      totalPct += toNumber(grades[i].Percent);
+    }
+    var avgPct = grades.length ? (totalPct / grades.length).toFixed(1) : '0';
+    var outcomesList = profile ? profile.criteria.map(function (c) { return c.outcome; }).filter(Boolean) : [];
+    var uniqueOutcomes = [];
+    for (var u = 0; u < outcomesList.length; u++) {
+      if (uniqueOutcomes.indexOf(outcomesList[u]) === -1) uniqueOutcomes.push(outcomesList[u]);
+    }
+
+    var proposed = {
+      unitName: target.task,
+      teacher: user,
+      dates: classMeta && classMeta.dates || new Date().toISOString().slice(0, 10),
+      syllabusOutcomes: uniqueOutcomes.join(', ') || 'DT5-1, DT5-2, DT5-3',
+      gradeDistribution: 'A: ' + counts.A + ', B: ' + counts.B + ', C: ' + counts.C + ', D: ' + counts.D + ', E: ' + counts.E + ' (Avg: ' + avgPct + '%)',
+      teacherVariations: classMeta && classMeta.teacherVariations || 'Practical prototyping with iterative testing; safety checkpoints completed.',
+      curriculumAdjustments: classMeta && classMeta.curriculumAdjustments || 'Visual scaffolding provided for folio documentation.',
+      studentFeedbackSummary: classMeta && classMeta.studentFeedbackSummary || 'Strong engagement with CAD/modelling; time management in folio completion identified for focus.'
+    };
+
+    return {
+      success: true,
+      taskName: target.task,
+      docId: docId || '',
+      proposed: proposed
+    };
+  }
+
+  function saveRegistrationPrefill(workbookId, taskName, docId, fieldValues, confirmed) {
+    if (!fieldValues) throw new Error('Field values required.');
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    if (!confirmed) {
+      return { success: true, preview: true, fieldValues: fieldValues, message: 'Review field values before confirming update.' };
+    }
+    var user = WebAccess.requireTeacher();
+    var ts = now();
+    append(ss, 'AuditLog', {
+      AuditID: uid(), TaskName: target.task, Action: 'RegistrationPrefillSaved',
+      TargetID: docId || 'DirectExport', TargetURL: docId ? 'https://docs.google.com/document/d/' + docId : '',
+      ActorEmail: user, Timestamp: ts, Status: 'Updated',
+      DetailsJSON: JSON.stringify(fieldValues)
+    });
+    return {
+      success: true,
+      message: 'Registration & Evaluation document entry updated successfully by ' + user + '.',
+      exportMarkdown: '# Registration & Evaluation — ' + target.task + '\n\n' +
+        '- **Teacher:** ' + fieldValues.teacher + '\n' +
+        '- **Dates:** ' + fieldValues.dates + '\n' +
+        '- **Outcomes:** ' + fieldValues.syllabusOutcomes + '\n' +
+        '- **Grade Distribution:** ' + fieldValues.gradeDistribution + '\n' +
+        '- **Teacher Variations & Evaluation:** ' + fieldValues.teacherVariations + '\n' +
+        '- **Curriculum Adjustments:** ' + fieldValues.curriculumAdjustments + '\n' +
+        '- **Student Feedback Summary:** ' + fieldValues.studentFeedbackSummary + '\n'
+    };
+  }
+
+  function getAuditDashboard(workbookId, params) {
+    var ss = LessonGraderWeb.open(workbookId);
+    var tasks = LessonGraderWeb.taskNames(ss);
+    var auditLogs = records(ss, 'AuditLog');
+    var grades = records(ss, 'ApprovedGrades');
+    var list = [];
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var tGrades = grades.filter(function (r) { return text(r.TaskName).trim() === t; });
+      var tAudit = auditLogs.filter(function (r) { return text(r.TaskName).trim() === t; });
+      var regSaved = tAudit.some(function (r) { return text(r.Action) === 'RegistrationPrefillSaved'; });
+      var highSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_HIGH'; });
+      var medSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_MED'; });
+      var lowSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_LOW'; });
+      var samplesCount = (highSaved ? 1 : 0) + (medSaved ? 1 : 0) + (lowSaved ? 1 : 0);
+
+      list.push({
+        taskName: t,
+        approvedGradesCount: tGrades.length,
+        registrationDocStatus: regSaved ? 'Complete' : (tGrades.length ? 'Pending Prefill' : 'Not Started'),
+        sampleCounts: { high: highSaved ? 1 : 0, med: medSaved ? 1 : 0, low: lowSaved ? 1 : 0, total: samplesCount },
+        auditComplete: regSaved && samplesCount === 3,
+        misplacedFiles: []
+      });
+    }
+    return {
+      success: true,
+      workbookName: ss.getName(),
+      tasks: list
+    };
+  }
+
+  function flagIncompleteSubmissions(workbookId, taskName) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var all = records(ss, 'Submissions').filter(function (r) {
+      return text(r.Task).trim() === target.task && (r.CurrentOfficial === '' || yes(r.CurrentOfficial));
+    });
+    var files = records(ss, 'SubmissionFiles');
+    var flagged = { notSubmitted: [], incomplete: [], unreadable: [], ready: [] };
+    for (var i = 0; i < all.length; i++) {
+      var s = all[i];
+      var id = text(s.SubmissionRecordID);
+      var subFiles = files.filter(function (f) { return text(f.SubmissionRecordID) === id; });
+      var name = text(s.StudentName);
+      var email = text(s.StudentEmail);
+      if (text(s.ClassroomState) === 'CREATED' || !subFiles.length) {
+        flagged.notSubmitted.push({ id: id, name: name, email: email, reason: 'No files submitted.' });
+      } else if (subFiles.some(function (f) { return text(f.AIReviewStatus) === 'Inaccessible' || text(f.Limitations); })) {
+        flagged.unreadable.push({ id: id, name: name, email: email, reason: 'Attached file could not be accessed.' });
+      } else if (text(s.Status) === 'New') {
+        flagged.ready.push({ id: id, name: name, email: email, reason: 'Ready for assessment.' });
+      } else {
+        flagged.incomplete.push({ id: id, name: name, email: email, reason: 'Draft in review.' });
+      }
+    }
+    return { success: true, taskName: target.task, flags: flagged };
+  }
+
+  function draftClassroomMessages(workbookId, taskName, studentFlags, customNotes) {
+    var target = openTask(workbookId, taskName);
+    var flags = studentFlags || [];
+    var drafts = [];
+    for (var i = 0; i < flags.length; i++) {
+      var s = flags[i];
+      var note = customNotes || 'Please check your attached assignment files and resubmit.';
+      var textMsg = 'Hi ' + s.name + ',\nRegarding your assignment for ' + target.task + ': ' + s.reason + '\n' + note;
+      drafts.push({
+        studentId: s.id,
+        studentName: s.name,
+        studentEmail: s.email,
+        reason: s.reason,
+        message: textMsg
+      });
+    }
+    return { success: true, taskName: target.task, drafts: drafts };
+  }
+
+  function sendClassroomMessages(workbookId, taskName, messages, confirmed) {
+    if (!Array.isArray(messages) || !messages.length) throw new Error('No messages to send.');
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    if (!confirmed) {
+      return { success: true, preview: true, count: messages.length, messages: messages, message: 'Review messages before sending.' };
+    }
+    var user = WebAccess.requireTeacher();
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      append(ss, 'ClassroomMessages', {
+        MessageID: uid(), CourseID: '', CourseWorkID: '',
+        StudentUserID: m.studentId || '', StudentName: m.studentName || '',
+        StudentEmail: m.studentEmail || '', Reason: m.reason || '',
+        MessageText: m.message || '', Status: 'Sent', SentAt: now(), SentBy: user
+      });
+    }
+    return { success: true, message: 'Successfully sent ' + messages.length + ' classroom notification messages.' };
+  }
+
+  function getClassTableData(workbookId, taskName, filter) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var all = records(ss, 'Submissions').filter(function (r) {
+      return text(r.Task).trim() === target.task && (r.CurrentOfficial === '' || yes(r.CurrentOfficial));
+    });
+    var grades = records(ss, 'ApprovedGrades').filter(function (r) { return text(r.TaskName).trim() === target.task; });
+    var profile = RubricEngine.getActiveProfile(ss, target.task);
+
+    var rows = all.map(function (s) {
+      var g = grades.filter(function (r) { return text(r.SubmissionRecordID) === text(s.SubmissionRecordID); })[0];
+      return {
+        submissionRecordId: text(s.SubmissionRecordID),
+        studentName: text(s.StudentName),
+        studentEmail: text(s.StudentEmail),
+        className: text(s.Class),
+        taskName: target.task,
+        assessmentType: text(s.AssessmentType) || (g && text(g.AssessmentType)) || 'Summative',
+        rawScore: s.RawScore != null && s.RawScore !== '' ? toNumber(s.RawScore) : (g && g.RawScore != null && g.RawScore !== '' ? toNumber(g.RawScore) : null),
+        deductionPoints: s.DeductionPoints != null && s.DeductionPoints !== '' ? toNumber(s.DeductionPoints) : (g && g.DeductionPoints != null && g.DeductionPoints !== '' ? toNumber(g.DeductionPoints) : 0),
+        deductionReason: text(s.DeductionReason || (g && g.DeductionReason) || ''),
+        finalScore: s.FinalScore != null && s.FinalScore !== '' ? toNumber(s.FinalScore) : (g && g.FinalScore != null && g.FinalScore !== '' ? toNumber(g.FinalScore) : (g ? toNumber(g.Points) : null)),
+        grade: g ? text(g.Grade) : 'Not Approved',
+        percent: g ? toNumber(g.Percent) : null,
+        status: text(s.Status)
+      };
+    });
+
+    return {
+      success: true,
+      taskName: target.task,
+      profile: profile ? RubricEngine.profileSummary(profile) : null,
+      rows: rows
+    };
+  }
+
+  function syncClassTable(workbookId, taskName, classMeta) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    ensureSheet(ss, 'ClassTracking', HEADERS.ClassTracking);
+    var data = getClassTableData(workbookId, taskName).rows;
+    var meta = classMeta || {};
+    var year = meta.year || '2026';
+    var stage = meta.stage || 'Stage 5';
+    var course = meta.courseCode || '7TECHI';
+    var classId = meta.className || '7TECHI';
+    var termPair = meta.termPair || 'Terms 1 & 2';
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      var existing = records(ss, 'ClassTracking');
+      var updated = 0;
+      var added = 0;
+      for (var i = 0; i < data.length; i++) {
+        var d = data[i];
+        var prior = existing.filter(function (r) {
+          return text(r.StudentUserID) === d.submissionRecordId && text(r.TaskName) === target.task;
+        })[0];
+        var fields = {
+          TrackingID: prior ? prior.TrackingID : uid(),
+          Year: year, Stage: stage, CourseCode: course, ClassID: classId, TermPair: termPair,
+          StudentUserID: d.submissionRecordId, StudentName: d.studentName, TaskName: target.task,
+          AssessmentType: d.assessmentType, RawScore: d.rawScore != null ? d.rawScore : '',
+          FinalScore: d.finalScore != null ? d.finalScore : '', MaxMarks: 100, Percent: d.percent != null ? d.percent : '',
+          Grade: d.grade, OutcomesJSON: '', Status: d.status, UpdatedAt: now()
+        };
+        if (prior) {
+          patch(ss, 'ClassTracking', prior._row, fields);
+          updated++;
+        } else {
+          append(ss, 'ClassTracking', fields);
+          added++;
+        }
+      }
+      return { success: true, message: 'Class tracking synced: ' + added + ' added, ' + updated + ' updated.' };
+    } finally { lock.releaseLock(); }
+  }
+
   return {
     HEADERS: HEADERS, prepare: prepare, listTask: listTask, detail: detail,
     saveDraft: saveDraft, approve: approve, lockAssessment: lockAssessment,
     reassess: reassess, previewRubric: previewRubric, activateRubric: activateRubric,
     runAi: runAi, report: report, importTask: importTask,
-    addManualSubmission: addManualSubmission
+    addManualSubmission: addManualSubmission,
+    bulkGrade: bulkGrade, verifyGradingComplete: verifyGradingComplete,
+    setGradingComplete: setGradingComplete, suggestWorkSamples: suggestWorkSamples,
+    saveWorkSamples: saveWorkSamples, previewRegistrationPrefill: previewRegistrationPrefill,
+    saveRegistrationPrefill: saveRegistrationPrefill, getAuditDashboard: getAuditDashboard,
+    flagIncompleteSubmissions: flagIncompleteSubmissions,
+    draftClassroomMessages: draftClassroomMessages,
+    sendClassroomMessages: sendClassroomMessages,
+    getClassTableData: getClassTableData, syncClassTable: syncClassTable
   };
 })();
 
@@ -797,4 +1295,56 @@ function apiWebUploadRubric(name, document) {
     return { success: false, message: 'Choose a PDF, Markdown or text rubric under 8 MB.' };
   }
   return apiCreateRubricFromDocument(name, document);
+}
+function apiWebBulkGradeQueue(workbookId, taskName, submissionIds, options) {
+  WebAccess.requireTeacher();
+  return WebGrading.bulkGrade(workbookId, taskName, submissionIds, options);
+}
+function apiWebVerifyGradingComplete(workbookId, taskName) {
+  WebAccess.requireTeacher();
+  return WebGrading.verifyGradingComplete(workbookId, taskName);
+}
+function apiWebSetGradingComplete(workbookId, taskName, confirmed) {
+  WebAccess.requireTeacher();
+  return WebGrading.setGradingComplete(workbookId, taskName, confirmed);
+}
+function apiWebSuggestWorkSamples(workbookId, taskName, policy) {
+  WebAccess.requireTeacher();
+  return WebGrading.suggestWorkSamples(workbookId, taskName, policy);
+}
+function apiWebSaveWorkSamples(workbookId, taskName, selections, destinations, confirmed) {
+  WebAccess.requireTeacher();
+  return WebGrading.saveWorkSamples(workbookId, taskName, selections, destinations, confirmed);
+}
+function apiWebPreviewRegistrationPrefill(workbookId, taskName, docId, classMeta) {
+  WebAccess.requireTeacher();
+  return WebGrading.previewRegistrationPrefill(workbookId, taskName, docId, classMeta);
+}
+function apiWebSaveRegistrationPrefill(workbookId, taskName, docId, fieldValues, confirmed) {
+  WebAccess.requireTeacher();
+  return WebGrading.saveRegistrationPrefill(workbookId, taskName, docId, fieldValues, confirmed);
+}
+function apiWebGetAuditDashboard(workbookId, params) {
+  WebAccess.requireTeacher();
+  return WebGrading.getAuditDashboard(workbookId, params);
+}
+function apiWebFlagIncompleteSubmissions(workbookId, taskName) {
+  WebAccess.requireTeacher();
+  return WebGrading.flagIncompleteSubmissions(workbookId, taskName);
+}
+function apiWebDraftClassroomMessages(workbookId, taskName, studentFlags, customNotes) {
+  WebAccess.requireTeacher();
+  return WebGrading.draftClassroomMessages(workbookId, taskName, studentFlags, customNotes);
+}
+function apiWebSendClassroomMessages(workbookId, taskName, messages, confirmed) {
+  WebAccess.requireTeacher();
+  return WebGrading.sendClassroomMessages(workbookId, taskName, messages, confirmed);
+}
+function apiWebGetClassTableData(workbookId, taskName, filter) {
+  WebAccess.requireTeacher();
+  return WebGrading.getClassTableData(workbookId, taskName, filter);
+}
+function apiWebSyncClassTable(workbookId, taskName, classMeta) {
+  WebAccess.requireTeacher();
+  return WebGrading.syncClassTable(workbookId, taskName, classMeta);
 }

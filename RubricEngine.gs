@@ -846,6 +846,343 @@ var RubricEngine = (function () {
     return profileFromCriteriaConfigRows(rows, meta);
   }
 
+  /* ------------------------------------------------------------------ *
+   * Settings & Foundations: Thresholds, Outcomes, Deductions, Templates
+   * ------------------------------------------------------------------ */
+
+  function validateThresholds(bands) {
+    var errors = [];
+    if (!Array.isArray(bands) || bands.length < 2) {
+      return { ok: false, errors: ['Grade scale must contain at least 2 bands (e.g. A–E).'] };
+    }
+    var sorted = bands.slice().sort(function (a, b) { return toNumber(b.min) - toNumber(a.min); });
+    if (Math.abs(toNumber(sorted[0].max) - 100) > 0.05) {
+      errors.push('Highest band max must be 100% (found ' + sorted[0].max + '%).');
+    }
+    if (Math.abs(toNumber(sorted[sorted.length - 1].min) - 0) > 0.05) {
+      errors.push('Lowest band min must be 0% (found ' + sorted[sorted.length - 1].min + '%).');
+    }
+    for (var i = 0; i < sorted.length; i++) {
+      var b = sorted[i];
+      var letter = String(b.letter || '').trim().toUpperCase();
+      if (!letter) errors.push('Band at index ' + (i + 1) + ' is missing a letter identifier.');
+      var min = toNumber(b.min);
+      var max = toNumber(b.max);
+      if (min >= max) {
+        errors.push('Band ' + letter + ' has invalid range: min (' + min + ') must be less than max (' + max + ').');
+      }
+      if (min < 0 || max > 100) {
+        errors.push('Band ' + letter + ' range must be within 0% to 100%.');
+      }
+      if (i < sorted.length - 1) {
+        var next = sorted[i + 1];
+        var nextMax = toNumber(next.max);
+        var gap = min - nextMax;
+        if (min < nextMax) {
+          errors.push('Band ' + letter + ' overlaps with band ' + next.letter + ' (' + min + ' < ' + nextMax + ').');
+        } else if (gap > 0.05) {
+          errors.push('Gap detected between band ' + letter + ' and ' + next.letter + ' (' + min + ' vs ' + nextMax + ').');
+        }
+      }
+    }
+    return { ok: errors.length === 0, errors: errors };
+  }
+
+  function previewThresholdRecalculation(oldBands, newBands, sampleScores) {
+    var oldScale = normalizeGradeScale(null, oldBands).bands;
+    var newScale = normalizeGradeScale(null, newBands).bands;
+    var scores = Array.isArray(sampleScores) ? sampleScores : [];
+    var changes = [];
+    var oldDist = {};
+    var newDist = {};
+    for (var i = 0; i < scores.length; i++) {
+      var item = scores[i] || {};
+      var percent = typeof item === 'number' ? item : toNumber(item.percent || (item.points && item.maxMarks ? (item.points / item.maxMarks) * 100 : 0));
+      var oldGrade = overallLetter(percent, oldScale);
+      var newGrade = overallLetter(percent, newScale);
+      oldDist[oldGrade] = (oldDist[oldGrade] || 0) + 1;
+      newDist[newGrade] = (newDist[newGrade] || 0) + 1;
+      if (oldGrade !== newGrade) {
+        changes.push({
+          studentName: item.studentName || item.StudentName || ('Student ' + (i + 1)),
+          percent: percent,
+          oldGrade: oldGrade,
+          newGrade: newGrade
+        });
+      }
+    }
+    return {
+      totalEvaluated: scores.length,
+      changedCount: changes.length,
+      changes: changes,
+      oldDistribution: oldDist,
+      newDistribution: newDist
+    };
+  }
+
+  function calculateDeduction(rawScore, maxMarks, rule, submissionMeta) {
+    var raw = toNumber(rawScore);
+    var max = toNumber(maxMarks) || 100;
+    var r = rule || { type: 'none' };
+    var meta = submissionMeta || {};
+
+    if (!r.type || r.type === 'none') {
+      return {
+        rawScore: raw,
+        deductionPoints: 0,
+        finalScore: raw,
+        percent: max > 0 ? (raw / max) * 100 : 0,
+        lateDays: 0,
+        penaltyApplied: false,
+        reason: 'No deduction applied.'
+      };
+    }
+
+    var turnedIn = meta.turnedInTime ? new Date(meta.turnedInTime) : null;
+    var due = meta.dueDate ? new Date(meta.dueDate) : null;
+    var extension = meta.extensionDate ? new Date(meta.extensionDate) : null;
+    var effectiveDue = extension || due;
+
+    var lateDays = 0;
+    if (meta.lateDays != null && isFinite(toNumber(meta.lateDays))) {
+      lateDays = Math.max(0, toNumber(meta.lateDays));
+    } else if (turnedIn && effectiveDue && !isNaN(turnedIn.getTime()) && !isNaN(effectiveDue.getTime())) {
+      var graceMs = (toNumber(r.graceHours) || 0) * 3600000;
+      var diffMs = turnedIn.getTime() - (effectiveDue.getTime() + graceMs);
+      if (diffMs > 0) {
+        if (r.excludeWeekends) {
+          var cur = new Date(effectiveDue.getTime() + graceMs);
+          while (cur < turnedIn) {
+            var day = cur.getDay();
+            if (day !== 0 && day !== 6) lateDays++;
+            cur.setDate(cur.getDate() + 1);
+          }
+        } else {
+          lateDays = Math.ceil(diffMs / (24 * 3600000));
+        }
+      }
+    } else if (meta.isLate || meta.late) {
+      lateDays = 1;
+    }
+
+    var deduction = 0;
+    var reason = '';
+    var rate = toNumber(r.rate);
+    var maxDeduction = (toNumber(r.maxDeductionPercent) || 100) / 100 * max;
+    var minFloor = toNumber(r.minFloor) || 0;
+
+    if (r.type === 'percent_per_day') {
+      if (lateDays > 0) {
+        var base = r.base === 'raw' ? raw : max;
+        deduction = (rate / 100) * base * lateDays;
+        reason = lateDays + ' day(s) late @ ' + rate + '%/day (' + deduction.toFixed(2) + ' marks deduction)';
+      } else {
+        reason = 'Submission on time. No late penalty.';
+      }
+    } else if (r.type === 'fixed_marks') {
+      deduction = rate;
+      reason = 'Fixed deduction: -' + rate + ' marks (' + (r.reason || 'Penalty') + ')';
+    } else if (r.type === 'percent_of_achieved') {
+      deduction = (rate / 100) * raw;
+      reason = rate + '% deduction of achieved mark (-' + deduction.toFixed(2) + ' marks)';
+    }
+
+    deduction = Math.min(deduction, maxDeduction);
+    deduction = Math.min(deduction, raw);
+    var finalScore = Math.max(minFloor, raw - deduction);
+    var percent = max > 0 ? (finalScore / max) * 100 : 0;
+
+    return {
+      rawScore: raw,
+      deductionPoints: deduction,
+      finalScore: finalScore,
+      percent: percent,
+      lateDays: lateDays,
+      penaltyApplied: deduction > 0,
+      reason: reason
+    };
+  }
+
+  function renderFeedbackTemplate(template, data) {
+    var t = String(template || '').trim();
+    if (!t) {
+      return {
+        text: (data && data.whatWentWell ? data.whatWentWell + '\n' + (data.areasForImprovement || '') : ''),
+        warnings: []
+      };
+    }
+    var d = data || {};
+    var warnings = [];
+    var rendered = t.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, function (match, token) {
+      var key = token.toLowerCase();
+      switch (key) {
+        case 'teacher': return d.teacher || d.teacherName || '';
+        case 'student': return d.student || d.studentName || '';
+        case 'class': return d.class || d.className || '';
+        case 'task': return d.task || d.taskName || '';
+        case 'grade': return d.grade || '';
+        case 'raw_score': return d.rawScore != null ? Number(d.rawScore).toFixed(1) : (d.score != null ? Number(d.score).toFixed(1) : '');
+        case 'final_score': return d.finalScore != null ? Number(d.finalScore).toFixed(1) : (d.points != null ? Number(d.points).toFixed(1) : '');
+        case 'score': return d.finalScore != null ? Number(d.finalScore).toFixed(1) : (d.points != null ? Number(d.points).toFixed(1) : '');
+        case 'max_marks': return d.maxMarks != null ? String(d.maxMarks) : '';
+        case 'percent': return d.percent != null ? Number(d.percent).toFixed(1) + '%' : '';
+        case 'what_went_well': return d.whatWentWell || '';
+        case 'areas_for_improvement': return d.areasForImprovement || '';
+        case 'goals': return d.goalsForNextAssessment || d.goals || '';
+        case 'date': return d.date || new Date().toISOString().slice(0, 10);
+        case 'assessment_type': return d.assessmentType || 'Summative';
+        case 'outcomes': return Array.isArray(d.outcomes) ? d.outcomes.join(', ') : (d.outcomes || '');
+        default:
+          warnings.push('Unknown template variable: {{' + token + '}}');
+          return '{{' + token + '}}';
+      }
+    });
+    return { text: rendered, warnings: warnings };
+  }
+
+  function validateOutcomeMappings(criteria, registeredOutcomes) {
+    var list = Array.isArray(criteria) ? criteria : [];
+    var registered = Array.isArray(registeredOutcomes) ? registeredOutcomes : [];
+    var regMap = {};
+    for (var r = 0; r < registered.length; r++) {
+      var code = typeof registered[r] === 'string' ? registered[r] : registered[r].code;
+      if (code) regMap[code.trim().toUpperCase()] = registered[r];
+    }
+    var mapped = 0;
+    var unmapped = [];
+    var coverage = {};
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      var outCode = String(c.outcome || '').trim().toUpperCase();
+      if (outCode) {
+        mapped++;
+        coverage[outCode] = (coverage[outCode] || 0) + 1;
+      } else {
+        unmapped.push(c.criterionId || c.title || ('Criterion ' + (i + 1)));
+      }
+    }
+    return {
+      valid: unmapped.length === 0,
+      totalCriteria: list.length,
+      mappedCriteria: mapped,
+      unmappedCriteria: unmapped,
+      coverage: coverage
+    };
+  }
+
+  function calculateOutcomeCoverage(profile, assessments) {
+    var critMap = {};
+    for (var i = 0; i < (profile && profile.criteria || []).length; i++) {
+      var c = profile.criteria[i];
+      critMap[c.criterionId] = c;
+    }
+    var outcomeResults = {};
+    var assessList = Array.isArray(assessments) ? assessments : [];
+    for (var a = 0; a < assessList.length; a++) {
+      var item = assessList[a] || {};
+      var cid = item.CriterionID || item.criterionId;
+      var crit = critMap[cid];
+      if (!crit || !crit.outcome) continue;
+      var code = crit.outcome.trim().toUpperCase();
+      if (!outcomeResults[code]) {
+        outcomeResults[code] = {
+          outcome: code,
+          criteriaCount: 0,
+          totalMarksAvailable: 0,
+          totalMarksEarned: 0,
+          evidenceCount: 0
+        };
+      }
+      outcomeResults[code].criteriaCount++;
+      outcomeResults[code].totalMarksAvailable += toNumber(crit.maxMarks);
+      outcomeResults[code].totalMarksEarned += toNumber(item.DerivedPoints || item.FinalApprovedPoints || item.points || 0);
+      if (item.teacherWrittenNote || item.TeacherWrittenNote || item.AIEvidenceJSON || item.aiEvidence) {
+        outcomeResults[code].evidenceCount++;
+      }
+    }
+    return outcomeResults;
+  }
+
+  function generateFormativeRubricDraft(assignmentData, existingRubrics, options) {
+    var data = assignmentData || {};
+    var title = String(data.title || 'Formative Task').trim();
+    var desc = String(data.description || '').trim();
+    var maxMarks = toNumber(data.maxMarks) || 20;
+    var course = String(data.courseCode || '7TECHI').trim();
+    var outcomes = Array.isArray(data.outcomes) && data.outcomes.length ? data.outcomes : ['DT5-1', 'DT5-2', 'DT5-3'];
+
+    var c1Marks = Math.max(1, Math.round(maxMarks * 0.3));
+    var c2Marks = Math.max(1, Math.round(maxMarks * 0.4));
+    var c3Marks = Math.max(1, maxMarks - c1Marks - c2Marks);
+
+    var rows = [
+      { criterion: 'Research and Ideation', part: 'Investigation', section: 'Formative', maxMarks: c1Marks, outcome: outcomes[0] || 'DT5-1', band: 'A', description: 'Extensive research exploring multiple innovative concepts with thorough documentation.' },
+      { criterion: 'Research and Ideation', part: 'Investigation', section: 'Formative', maxMarks: c1Marks, outcome: outcomes[0] || 'DT5-1', band: 'B', description: 'Thorough research into design possibilities with clear annotations.' },
+      { criterion: 'Research and Ideation', part: 'Investigation', section: 'Formative', maxMarks: c1Marks, outcome: outcomes[0] || 'DT5-1', band: 'C', description: 'Sound research into chosen concepts with basic documentation.' },
+      { criterion: 'Research and Ideation', part: 'Investigation', section: 'Formative', maxMarks: c1Marks, outcome: outcomes[0] || 'DT5-1', band: 'D', description: 'Basic research with limited exploration of alternatives.' },
+      { criterion: 'Research and Ideation', part: 'Investigation', section: 'Formative', maxMarks: c1Marks, outcome: outcomes[0] || 'DT5-1', band: 'E', description: 'Elementary research with minimal or missing documentation.' },
+
+      { criterion: 'Development and Prototyping', part: 'Application', section: 'Formative', maxMarks: c2Marks, outcome: outcomes[1] || 'DT5-2', band: 'A', description: 'Exceptional prototype development demonstrating advanced technical skill and material testing.' },
+      { criterion: 'Development and Prototyping', part: 'Application', section: 'Formative', maxMarks: c2Marks, outcome: outcomes[1] || 'DT5-2', band: 'B', description: 'Detailed prototype development with clear testing of technical parameters.' },
+      { criterion: 'Development and Prototyping', part: 'Application', section: 'Formative', maxMarks: c2Marks, outcome: outcomes[1] || 'DT5-2', band: 'C', description: 'Sound development resulting in a functional prototype meeting core requirements.' },
+      { criterion: 'Development and Prototyping', part: 'Application', section: 'Formative', maxMarks: c2Marks, outcome: outcomes[1] || 'DT5-2', band: 'D', description: 'Basic prototype with partial functionality and limited testing.' },
+      { criterion: 'Development and Prototyping', part: 'Application', section: 'Formative', maxMarks: c2Marks, outcome: outcomes[1] || 'DT5-2', band: 'E', description: 'Incomplete prototype showing minimal development.' },
+
+      { criterion: 'Evaluation and Reflection', part: 'Evaluation', section: 'Formative', maxMarks: c3Marks, outcome: outcomes[2] || 'DT5-3', band: 'A', description: 'Critical reflection evaluating performance against design criteria with clear next steps.' },
+      { criterion: 'Evaluation and Reflection', part: 'Evaluation', section: 'Formative', maxMarks: c3Marks, outcome: outcomes[2] || 'DT5-3', band: 'B', description: 'Thorough evaluation identifying strengths and actionable improvements.' },
+      { criterion: 'Evaluation and Reflection', part: 'Evaluation', section: 'Formative', maxMarks: c3Marks, outcome: outcomes[2] || 'DT5-3', band: 'C', description: 'Sound evaluation discussing outcome success and basic improvements.' },
+      { criterion: 'Evaluation and Reflection', part: 'Evaluation', section: 'Formative', maxMarks: c3Marks, outcome: outcomes[2] || 'DT5-3', band: 'D', description: 'Basic reflection with superficial comments on outcome.' },
+      { criterion: 'Evaluation and Reflection', part: 'Evaluation', section: 'Formative', maxMarks: c3Marks, outcome: outcomes[2] || 'DT5-3', band: 'E', description: 'Minimal or missing reflection on the task.' }
+    ];
+
+    var profile = buildProfileFromRubricRows(rows, {
+      taskName: title,
+      name: title + ' (Formative Rubric Draft)',
+      source: 'formativeGeneratedDraft'
+    });
+    profile.reviewed = false;
+    profile.assessmentType = 'Formative';
+    profile.rationale = 'Generated formative rubric draft aligning with course ' + course + ' and syllabus outcomes ' + outcomes.join(', ') + '.';
+    return profile;
+  }
+
+  function saveGradeScale(ss, gradeScale, user) {
+    var scale = normalizeGradeScale(gradeScale && gradeScale.weights, gradeScale && gradeScale.bands);
+    var validation = validateThresholds(scale.bands);
+    if (!validation.ok) {
+      return { success: false, message: 'Invalid thresholds: ' + validation.errors.join(' ') };
+    }
+    var sheet = ss.getSheetByName('Setup');
+    if (!sheet) {
+      sheet = ss.insertSheet('Setup');
+    }
+    var lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      var data = [
+        ['GRADE SCALE', 'WEIGHT'],
+        ['A', scale.weights.A != null ? scale.weights.A : 1.0],
+        ['B', scale.weights.B != null ? scale.weights.B : 0.875],
+        ['C', scale.weights.C != null ? scale.weights.C : 0.70],
+        ['D', scale.weights.D != null ? scale.weights.D : 0.575],
+        ['E', scale.weights.E != null ? scale.weights.E : 0.25],
+        ['', ''],
+        ['OVERALL GRADE BAND', 'MIN', 'MAX']
+      ];
+      for (var i = 0; i < scale.bands.length; i++) {
+        var b = scale.bands[i];
+        data.push([b.letter, b.min, b.max]);
+      }
+      data.push(['', '', '']);
+      data.push(['LAST_UPDATED', new Date().toISOString(), user || '']);
+      sheet.clearContents();
+      sheet.getRange(1, 1, data.length, 3).setValues(data);
+      return { success: true, gradeScale: scale, message: 'Grade scale thresholds and weights saved successfully.' };
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     CORE_BANDS: CORE_BANDS,
@@ -875,6 +1212,14 @@ var RubricEngine = (function () {
     saveProfile: saveProfile,
     readRubricRows: readRubricRows,
     buildProfileFromRubricFile: buildProfileFromRubricFile,
-    buildProfileFromWorkbookCriteriaConfig: buildProfileFromWorkbookCriteriaConfig
+    buildProfileFromWorkbookCriteriaConfig: buildProfileFromWorkbookCriteriaConfig,
+    validateThresholds: validateThresholds,
+    previewThresholdRecalculation: previewThresholdRecalculation,
+    calculateDeduction: calculateDeduction,
+    renderFeedbackTemplate: renderFeedbackTemplate,
+    validateOutcomeMappings: validateOutcomeMappings,
+    calculateOutcomeCoverage: calculateOutcomeCoverage,
+    generateFormativeRubricDraft: generateFormativeRubricDraft,
+    saveGradeScale: saveGradeScale
   };
 })();
