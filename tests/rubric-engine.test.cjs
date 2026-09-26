@@ -101,3 +101,162 @@ test('same title in two project parts becomes two distinct criteria, not merged'
   assert.equal(p.criteria[1].part,'Making');
   assert.equal(p.totalMaxMarks,15);
 });
+
+test('validates editable A-E thresholds and rejects gaps, overlaps, or inverted bounds',()=>{
+  const valid = [
+    { letter: 'A', min: 85, max: 100 },
+    { letter: 'B', min: 75, max: 85 },
+    { letter: 'C', min: 65, max: 75 },
+    { letter: 'D', min: 50, max: 65 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  assert.equal(E.validateThresholds(valid).ok, true);
+
+  const overlap = [
+    { letter: 'A', min: 80, max: 100 },
+    { letter: 'B', min: 85, max: 90 },
+    { letter: 'C', min: 65, max: 80 },
+    { letter: 'D', min: 50, max: 65 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  assert.equal(E.validateThresholds(overlap).ok, false);
+  assert.match(E.validateThresholds(overlap).errors.join(' '), /overlaps/);
+
+  const gap = [
+    { letter: 'A', min: 85, max: 100 },
+    { letter: 'B', min: 70, max: 80 }, // gap between 80 and 85
+    { letter: 'C', min: 60, max: 70 },
+    { letter: 'D', min: 50, max: 60 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  assert.equal(E.validateThresholds(gap).ok, false);
+  assert.match(E.validateThresholds(gap).errors.join(' '), /Gap detected/);
+
+  const invalidMax = [
+    { letter: 'A', min: 85, max: 95 }, // not 100
+    { letter: 'B', min: 75, max: 85 },
+    { letter: 'C', min: 65, max: 75 },
+    { letter: 'D', min: 50, max: 65 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  assert.equal(E.validateThresholds(invalidMax).ok, false);
+});
+
+test('previews threshold recalculation effects on student grade distributions',()=>{
+  const oldBands = [
+    { letter: 'A', min: 85, max: 100 },
+    { letter: 'B', min: 75, max: 85 },
+    { letter: 'C', min: 65, max: 75 },
+    { letter: 'D', min: 50, max: 65 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  const newBands = [
+    { letter: 'A', min: 80, max: 100 }, // lowered to 80
+    { letter: 'B', min: 70, max: 80 },
+    { letter: 'C', min: 60, max: 70 },
+    { letter: 'D', min: 50, max: 60 },
+    { letter: 'E', min: 0, max: 50 }
+  ];
+  const sampleScores = [
+    { studentName: 'Alex', percent: 82 }, // was B, becomes A
+    { studentName: 'Jordan', percent: 72 }, // was C, becomes B
+    { studentName: 'Taylor', percent: 90 }  // was A, stays A
+  ];
+  const preview = E.previewThresholdRecalculation(oldBands, newBands, sampleScores);
+  assert.equal(preview.totalEvaluated, 3);
+  assert.equal(preview.changedCount, 2);
+  assert.equal(preview.changes[0].oldGrade, 'B');
+  assert.equal(preview.changes[0].newGrade, 'A');
+});
+
+test('computes deterministic deduction rules: late days, fixed marks, percentage per day, weekend exclusion',()=>{
+  // 1. Percentage per day: 10%/day on a 20 mark task, 2 days late -> -4 marks
+  const res1 = E.calculateDeduction(18, 20, { type: 'percent_per_day', rate: 10 }, {
+    turnedInTime: '2026-09-20T10:00:00Z',
+    dueDate: '2026-09-18T10:00:00Z'
+  });
+  assert.equal(res1.lateDays, 2);
+  assert.equal(res1.deductionPoints, 4);
+  assert.equal(res1.finalScore, 14);
+  assert.equal(res1.penaltyApplied, true);
+
+  // 2. Fixed marks deduction: -5 marks
+  const res2 = E.calculateDeduction(16, 20, { type: 'fixed_marks', rate: 5, reason: 'Late folio' }, {});
+  assert.equal(res2.deductionPoints, 5);
+  assert.equal(res2.finalScore, 11);
+
+  // 3. Percentage of achieved score: 10% off 15 marks -> -1.5 marks
+  const res3 = E.calculateDeduction(15, 20, { type: 'percent_of_achieved', rate: 10 }, {});
+  assert.equal(res3.deductionPoints, 1.5);
+  assert.equal(res3.finalScore, 13.5);
+
+  // 4. On time submission with grace period
+  const res4 = E.calculateDeduction(18, 20, { type: 'percent_per_day', rate: 10, graceHours: 4 }, {
+    turnedInTime: '2026-09-18T12:00:00Z',
+    dueDate: '2026-09-18T10:00:00Z'
+  });
+  assert.equal(res4.penaltyApplied, false);
+  assert.equal(res4.finalScore, 18);
+
+  // 5. Floor constraint (never below minFloor)
+  const res5 = E.calculateDeduction(3, 20, { type: 'fixed_marks', rate: 10, minFloor: 0 }, {});
+  assert.equal(res5.finalScore, 0);
+});
+
+test('renders feedback templates and warns about unknown tokens',()=>{
+  const template = 'Great job {{student}} on {{task}}! Grade: {{grade}} ({{final_score}}/{{max_marks}}). {{what_went_well}} Areas to improve: {{areas_for_improvement}}. {{unknown_field}}';
+  const data = {
+    student: 'Sam',
+    task: 'Jewellery Folio',
+    grade: 'A',
+    finalScore: 18,
+    maxMarks: 20,
+    whatWentWell: 'Excellent casting technique.',
+    areasForImprovement: 'Refine the polish finish.'
+  };
+  const rendered = E.renderFeedbackTemplate(template, data);
+  assert.ok(rendered.text.includes('Great job Sam on Jewellery Folio! Grade: A (18.0/20). Excellent casting technique.'));
+  assert.ok(rendered.text.includes('Refine the polish finish.'));
+  assert.equal(rendered.warnings.length, 1);
+  assert.match(rendered.warnings[0], /unknown_field/);
+});
+
+test('validates curriculum outcome mappings and tallies outcome coverage',()=>{
+  const criteria = [
+    { criterionId: 'C01', maxMarks: 10, outcome: 'DT5-1' },
+    { criterionId: 'C02', maxMarks: 10, outcome: 'DT5-2' },
+    { criterionId: 'C03', maxMarks: 5, outcome: '' }
+  ];
+  const res = E.validateOutcomeMappings(criteria, ['DT5-1', 'DT5-2', 'DT5-3']);
+  assert.equal(res.valid, false);
+  assert.equal(res.mappedCriteria, 2);
+  assert.equal(res.unmappedCriteria[0], 'C03');
+
+  const p = makeProfile();
+  p.criteria[0].outcome = 'DT5-1';
+  p.criteria[1].outcome = 'DT5-2';
+  const cov = E.calculateOutcomeCoverage(p, [
+    { criterionId: 'C01', points: 8, teacherWrittenNote: 'Observed' },
+    { criterionId: 'C02', points: 10, teacherWrittenNote: 'Tested' }
+  ]);
+  assert.equal(cov['DT5-1'].criteriaCount, 1);
+  assert.equal(cov['DT5-1'].totalMarksEarned, 8);
+  assert.equal(cov['DT5-2'].totalMarksEarned, 10);
+});
+
+test('generates formative rubric draft with discrete criteria, bands and outcomes',()=>{
+  const draft = E.generateFormativeRubricDraft({
+    title: 'Water Filtration Interim',
+    description: 'Design and test a sand and charcoal filter column.',
+    maxMarks: 15,
+    courseCode: '8TECHI',
+    outcomes: ['SC4-14LW', 'DT5-2', 'DT5-3']
+  });
+  assert.equal(draft.taskName, 'Water Filtration Interim');
+  assert.equal(draft.reviewed, false);
+  assert.equal(draft.assessmentType, 'Formative');
+  assert.equal(draft.criteria.length, 3);
+  assert.equal(draft.totalMaxMarks, 15);
+  assert.equal(draft.criteria[0].outcome, 'SC4-14LW');
+});
+

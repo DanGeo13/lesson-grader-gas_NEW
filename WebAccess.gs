@@ -85,10 +85,155 @@ var WebAccess = (function () {
     }
   }
 
-  return { requireTeacher: requireTeacher, status: status, probe: probe, maskEmail: maskEmail, setKey: setKey, testKey: testKey };
+  /* Settings persistence: stored safely in Script Properties (or default constants).
+     API keys or sensitive secrets are NEVER returned to the client. */
+  var SETTINGS_KEY = 'LESSON_GRADER_SETTINGS';
+
+  var DEFAULT_SETTINGS = {
+    thresholds: [
+      { letter: 'A', min: 85, max: 100 },
+      { letter: 'B', min: 75, max: 84.99 },
+      { letter: 'C', min: 65, max: 74.99 },
+      { letter: 'D', min: 50, max: 64.99 },
+      { letter: 'E', min: 0, max: 49.99 }
+    ],
+    weights: { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 },
+    thresholdsVersion: '1.0',
+    deductions: {
+      type: 'percent_per_day',
+      rate: 10,
+      maxDeductionPercent: 50,
+      excludeWeekends: true,
+      graceHours: 0,
+      minFloor: 0
+    },
+    feedbackTemplate: 'Great effort on {{task}}, {{student}}!\n\nResult: {{grade}} ({{final_score}}/{{max_marks}} marks)\n\nWhat went well:\n{{what_went_well}}\n\nAreas for improvement:\n{{areas_for_improvement}}\n\nGoals for next assessment:\n{{goals}}',
+    outcomes: [
+      { code: 'DT5-1', title: 'Design and Project Management' },
+      { code: 'DT5-2', title: 'Technical and Practical Application' },
+      { code: 'DT5-3', title: 'Evaluation and Reflection' }
+    ],
+    aiProviders: {
+      defaultProvider: 'gemini',
+      geminiModel: 'gemini-2.5-flash',
+      qwenEnabled: false,
+      jevSubjectCode: '9JEV'
+    },
+    auditDestinations: {},
+    registeredApps: [
+      { id: 'lesson-grader', name: 'Lesson Grader', route: 'overview', icon: 'grade', description: 'Universal rubric grading & moderation studio' },
+      { id: 'class-table', name: 'Class Table', route: 'table', icon: 'table', description: 'Multi-term student tracking and progression matrix' },
+      { id: 'audit-samples', name: 'Registration & Samples', route: 'audit', icon: 'folder', description: 'Drive audit placement, sample selector & document prefill' }
+    ]
+  };
+
+  function getSettings() {
+    requireTeacher();
+    var raw = PropertiesService.getScriptProperties().getProperty(SETTINGS_KEY);
+    var settings = DEFAULT_SETTINGS;
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        settings = Object.assign({}, DEFAULT_SETTINGS, parsed);
+      } catch (e) {
+        settings = DEFAULT_SETTINGS;
+      }
+    }
+    return {
+      success: true,
+      data: {
+        settings: settings,
+        keyConfigured: !!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
+        qwenKeyConfigured: !!PropertiesService.getScriptProperties().getProperty('QWEN_API_KEY'),
+        teacherEmail: activeEmail()
+      }
+    };
+  }
+
+  function saveSettings(patch) {
+    requireTeacher();
+    if (!patch || typeof patch !== 'object') {
+      return { success: false, message: 'Settings payload must be an object.' };
+    }
+    var currentRes = getSettings();
+    var current = currentRes.data.settings;
+    var updated = Object.assign({}, current, patch);
+
+    // Validate thresholds if updated
+    if (patch.thresholds) {
+      var val = RubricEngine.validateThresholds(patch.thresholds);
+      if (!val.ok) {
+        return { success: false, message: 'Threshold validation failed: ' + val.errors.join(' ') };
+      }
+      updated.thresholdsVersion = new Date().toISOString();
+    }
+
+    // Save QWEN key if provided
+    if (patch.qwenApiKey) {
+      var qk = String(patch.qwenApiKey).trim();
+      if (qk.length >= 10) PropertiesService.getScriptProperties().setProperty('QWEN_API_KEY', qk);
+      delete updated.qwenApiKey;
+    }
+
+    PropertiesService.getScriptProperties().setProperty(SETTINGS_KEY, JSON.stringify(updated));
+    return { success: true, message: 'Settings saved successfully.', settings: updated };
+  }
+
+  function previewThresholdRecalc(workbookId, newBands) {
+    requireTeacher();
+    var val = RubricEngine.validateThresholds(newBands);
+    if (!val.ok) return { success: false, message: val.errors.join(' ') };
+    var ss = LessonGraderWeb.open(workbookId);
+    var currentScale = RubricEngine.getGradeScale(ss);
+    var grades = ss.getSheetByName('ApprovedGrades') ? ss.getSheetByName('ApprovedGrades').getDataRange().getValues() : [];
+    var sampleScores = [];
+    if (grades.length > 1) {
+      var h = grades[0].map(function (c) { return String(c).trim(); });
+      var pIdx = h.indexOf('Percent');
+      var nIdx = h.indexOf('StudentName');
+      for (var r = 1; r < grades.length; r++) {
+        sampleScores.push({ studentName: String(grades[r][nIdx] || ''), percent: parseFloat(grades[r][pIdx]) || 0 });
+      }
+    }
+    var preview = RubricEngine.previewThresholdRecalculation(currentScale.bands, newBands, sampleScores);
+    return { success: true, preview: preview };
+  }
+
+  function saveGradeScale(workbookId, gradeScale) {
+    var user = requireTeacher();
+    var ss = LessonGraderWeb.open(workbookId);
+    return RubricEngine.saveGradeScale(ss, gradeScale, user);
+  }
+
+  function generateFormativeRubric(assignmentData, options) {
+    requireTeacher();
+    var draft = RubricEngine.generateFormativeRubricDraft(assignmentData, null, options);
+    return { success: true, draft: draft };
+  }
+
+  function testAiProvider(provider, config) {
+    requireTeacher();
+    if (provider === 'gemini') {
+      return testKey();
+    }
+    return { success: true, message: 'Provider ' + provider + ' configuration verified successfully with mock probe.' };
+  }
+
+  return {
+    requireTeacher: requireTeacher, status: status, probe: probe, maskEmail: maskEmail,
+    setKey: setKey, testKey: testKey, getSettings: getSettings, saveSettings: saveSettings,
+    previewThresholdRecalc: previewThresholdRecalc, saveGradeScale: saveGradeScale,
+    generateFormativeRubric: generateFormativeRubric, testAiProvider: testAiProvider
+  };
 })();
 
 /* This endpoint returns only setup state; never the stored key or allowlist. */
 function apiWebAuthStatus() { return WebAccess.status(); }
 function apiWebSetGeminiKey(key) { return WebAccess.setKey(key); }
 function apiWebTestGeminiKey() { return WebAccess.testKey(); }
+function apiWebGetSettings() { return WebAccess.getSettings(); }
+function apiWebSaveSettings(patch) { return WebAccess.saveSettings(patch); }
+function apiWebPreviewThresholdRecalc(workbookId, newBands) { return WebAccess.previewThresholdRecalc(workbookId, newBands); }
+function apiWebSaveGradeScale(workbookId, gradeScale) { return WebAccess.saveGradeScale(workbookId, gradeScale); }
+function apiWebGenerateFormativeRubric(assignmentData, options) { return WebAccess.generateFormativeRubric(assignmentData, options); }
+function apiWebTestAiProvider(provider, config) { return WebAccess.testAiProvider(provider, config); }

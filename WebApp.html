@@ -5,14 +5,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#172b28">
-  <title>Lesson Grader — The teacher's studio</title>
+  <title>Teacher's Studio — Lesson Grader</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     :root {
       --ink: #182a28; --forest: #172b28; --forest-light: #253f3a;
       --muted: #62726d; --line: #e4e9e2; --paper: #f6f7f2; --white: #ffffff;
       --lime: #dff59a; --lime-deep: #a3c648; --sky: #dbeafb; --blue: #326594;
-      --rose: #fff0e9; --red: #a24637; --radius: 18px;
+      --rose: #fff0e9; --red: #a24637; --radius: 16px;
       --shadow: 0 16px 48px rgba(27, 49, 41, .055), 0 2px 8px rgba(27, 49, 41, .03);
       font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
       color: var(--ink); background: var(--paper);
@@ -22,342 +22,620 @@
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .48; }
-    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
       outline: 3px solid #72a6bd; outline-offset: 3px;
     }
     a { color: inherit; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     [hidden] { display: none !important; }
     .app-shell { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 100vh; }
-    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--forest); color: #f1f4ee; padding: 28px 17px 19px; z-index: 20; }
-    .brand { display: flex; align-items: center; gap: 11px; padding: 0 11px 43px; text-decoration: none; }
-    .brand-mark { width: 36px; height: 36px; flex: none; display: grid; place-items: center; background: var(--lime); color: var(--forest); border-radius: 11px; transform: rotate(-7deg); box-shadow: 0 4px 0 rgba(0,0,0,.2); }
-    .brand-mark svg { transform: rotate(7deg); }
-    .brand-name { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -.075em; line-height: 1; }
-    .brand-sub { font-size: 10px; color: #a7bdb2; letter-spacing: .13em; text-transform: uppercase; font-weight: 700; margin-top: 5px; }
-    .nav-label { padding: 0 14px 11px; font-size: 10px; letter-spacing: .16em; font-weight: 800; color: #879f96; text-transform: uppercase; }
-    .side-nav { display: flex; flex-direction: column; gap: 5px; }
-    .nav-link { min-height: 46px; display: flex; align-items: center; gap: 13px; padding: 0 13px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #b7c9c0; font-size: 13px; font-weight: 700; text-align: left; transition: background .2s, color .2s; width: 100%; }
+    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--forest); color: #f1f4ee; padding: 24px 16px 16px; z-index: 20; overflow-y: auto; }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 30px; text-decoration: none; }
+    .brand-mark { width: 36px; height: 36px; flex: none; display: grid; place-items: center; background: var(--lime); color: var(--forest); border-radius: 10px; transform: rotate(-7deg); box-shadow: 0 4px 0 rgba(0,0,0,.2); font-weight: 800; font-size: 18px; }
+    .brand-name { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; font-weight: 800; letter-spacing: -.05em; line-height: 1.1; color: #fff; }
+    .brand-sub { font-size: 10px; color: #a7bdb2; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; margin-top: 3px; display: block; }
+    .nav-label { padding: 0 12px 8px; font-size: 10px; letter-spacing: .16em; font-weight: 800; color: #879f96; text-transform: uppercase; margin-top: 8px; }
+    .side-nav { display: flex; flex-direction: column; gap: 4px; }
+    .nav-link { min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #b7c9c0; font-size: 13px; font-weight: 700; text-align: left; transition: background .18s, color .18s; width: 100%; }
     .nav-link:hover, .nav-link.active { background: var(--forest-light); color: white; }
     .nav-link.active { box-shadow: inset 3px 0 0 var(--lime); }
     .nav-link svg { width: 18px; height: 18px; flex: none; stroke-width: 1.8; }
-    .side-bottom { margin-top: auto; }
-    .side-note { position: relative; overflow: hidden; background: #284339; padding: 17px 16px 18px; border-radius: 14px; margin: 0 5px 20px; }
-    .side-note::after { content: ''; position: absolute; width: 90px; height: 90px; border-radius: 50%; border: 1px solid rgba(223,245,154,.25); top: -46px; right: -20px; box-shadow: 0 0 0 15px rgba(223,245,154,.05), 0 0 0 34px rgba(223,245,154,.04); }
+    .side-bottom { margin-top: auto; padding-top: 16px; }
+    .side-note { position: relative; overflow: hidden; background: #284339; padding: 14px 14px 16px; border-radius: 12px; margin-bottom: 14px; }
     .side-note .tiny { color: var(--lime); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; }
-    .side-note strong { display: block; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 15px; line-height: 1.4; margin: 8px 0 5px; letter-spacing: -.035em; }
-    .side-note small { font-size: 11px; color: #b2c8bd; line-height: 1.5; }
-    .account { display: flex; align-items: center; gap: 10px; padding: 16px 11px 0; border-top: 1px solid #37504a; font-size: 12px; }
-    .avatar { display: grid; place-items: center; border-radius: 50%; width: 33px; height: 33px; flex: none; background: #d5eacb; color: #25443a; font-size: 11px; font-weight: 800; }
-    .account small { display: block; color: #94aa9f; font-size: 10px; margin-top: 2px; max-width: 160px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+    .side-note strong { display: block; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; line-height: 1.35; margin: 6px 0 4px; color: #fff; }
+    .side-note small { font-size: 11px; color: #b2c8bd; line-height: 1.4; }
+    .account { display: flex; align-items: center; gap: 10px; padding: 12px 10px 0; border-top: 1px solid #37504a; font-size: 12px; }
+    .avatar { display: grid; place-items: center; border-radius: 50%; width: 32px; height: 32px; flex: none; background: #d5eacb; color: #25443a; font-size: 11px; font-weight: 800; }
+    .account small { display: block; color: #94aa9f; font-size: 10px; margin-top: 2px; max-width: 150px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
     .page-shell { min-width: 0; }
-    .topbar { height: 70px; background: rgba(255,255,255,.87); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 clamp(20px, 4vw, 54px); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 10; }
-    .breadcrumbs { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar { height: 64px; background: rgba(255,255,255,.92); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 clamp(16px, 3vw, 40px); backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 10; }
+    .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .back-btn, .back-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #f0f4ee; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--forest); }
+    .back-btn:hover, .back-link:hover { background: #e2ecd9; }
+    .breadcrumbs { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .breadcrumbs strong { color: var(--ink); font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
     .crumb-sep { color: #b6c3b9; }
-    .topbar-right { display: flex; align-items: center; gap: 14px; flex: none; }
-    .connection { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); background: #f9fbf7; border-radius: 40px; font-size: 11px; font-weight: 700; color: #416753; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
+    .connection { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); background: #f9fbf7; border-radius: 40px; font-size: 11px; font-weight: 700; color: #416753; }
     .connection .dot { width: 7px; height: 7px; background: #6ca76a; border-radius: 50%; box-shadow: 0 0 0 3px #e4f1dc; }
-    .preview-flag { display: none; padding: 7px 10px; background: #fff0cf; border-radius: 20px; color: #845525; font-size: 11px; font-weight: 800; }
+    .preview-flag { display: none; padding: 5px 8px; background: #fff0cf; border-radius: 20px; color: #845525; font-size: 10px; font-weight: 800; }
     body.preview-mode .preview-flag { display: inline; }
-    .mobile-brand { display: none; }
-    main { width: 100%; max-width: 1510px; margin: 0 auto; padding: 38px clamp(20px,4vw,54px) 70px; }
-    .view { animation: slidein .32s ease both; }
-    @keyframes slidein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    h1, h2, h3, p { margin-top: 0; }
-    h1, h2, h3 { font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif; letter-spacing: -.055em; }
-    h1 { font-size: clamp(30px,3.4vw,46px); line-height: 1.13; font-weight: 800; margin-bottom: 12px; }
-    h2 { font-size: clamp(22px,2vw,29px); line-height: 1.2; font-weight: 800; margin-bottom: 5px; }
-    h3 { font-size: 16px; font-weight: 800; margin-bottom: 5px; }
-    p { line-height: 1.6; }
-    .eyebrow { font-size: 10px; letter-spacing: .16em; font-weight: 800; text-transform: uppercase; color: #64856a; margin-bottom: 11px; }
+    main { width: 100%; max-width: 1540px; margin: 0 auto; padding: 28px clamp(16px,3vw,40px) 60px; }
+    .view { animation: slidein .28s ease both; }
+    @keyframes slidein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1, h2, h3, h4 { font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif; letter-spacing: -.04em; }
+    h1 { font-size: clamp(26px,3vw,38px); line-height: 1.15; font-weight: 800; margin-bottom: 8px; }
+    h2 { font-size: clamp(20px,2vw,26px); line-height: 1.2; font-weight: 800; margin-bottom: 4px; }
+    h3 { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+    p { line-height: 1.55; }
+    .eyebrow { font-size: 10px; letter-spacing: .15em; font-weight: 800; text-transform: uppercase; color: #507858; margin-bottom: 8px; }
     .lead { color: var(--muted); font-size: 14px; max-width: 680px; }
     .muted { color: var(--muted); }
     .tiny { font-size: 11px; }
-    .header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 23px; }
+    .header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
     .header-row .lead { margin-bottom: 0; }
-    .actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-    .btn { border: 1px solid #dbe4d9; background: var(--white); color: var(--ink); padding: 11px 15px; min-height: 43px; border-radius: 10px; font-size: 12px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; white-space: nowrap; transition: transform .18s, box-shadow .18s, background .18s, border-color .18s; text-decoration: none; }
-    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 15px rgba(26,48,41,.1); border-color: #b8cdb5; }
+    .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .btn { border: 1px solid #dbe4d9; background: var(--white); color: var(--ink); padding: 9px 14px; min-height: 38px; border-radius: 8px; font-size: 12px; font-weight: 800; display: inline-flex; gap: 7px; align-items: center; justify-content: center; white-space: nowrap; transition: transform .15s, box-shadow .15s, background .15s, border-color .15s; text-decoration: none; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,48,41,.08); border-color: #b8cdb5; }
     .btn-dark { background: var(--forest); color: white; border-color: var(--forest); }
     .btn-dark:hover:not(:disabled) { background: #294b42; }
     .btn-lime { background: var(--lime); border-color: var(--lime); color: #1b382e; }
+    .btn-lime:hover:not(:disabled) { background: #cce67c; }
     .btn-ghost { border-color: transparent; background: transparent; color: #51665e; }
     .btn-ghost:hover:not(:disabled) { background: #e9efe6; box-shadow: none; }
     .btn-danger { color: #954a38; border-color: #f0d6cb; background: #fffaf6; }
-    .btn-sm { min-height: 34px; padding: 7px 10px; font-size: 11px; }
-    .btn svg, .inline-icon { width: 15px; height: 15px; flex: none; }
-    .icon-only { padding: 8px; min-width: 39px; }
+    .btn-sm { min-height: 32px; padding: 5px 10px; font-size: 11px; }
     .card { background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-    .card-pad { padding: 22px; }
+    .card-pad { padding: 20px; }
     .grid-3 { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
     .grid-2 { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-    .hero { background: var(--forest); color: white; display: grid; grid-template-columns: minmax(0,1fr) 260px; overflow: hidden; border-radius: 23px; min-height: 226px; margin-bottom: 19px; position: relative; }
-    .hero-copy { padding: 35px clamp(28px,3vw,45px); position: relative; z-index: 1; }
+    .hero { background: var(--forest); color: white; display: grid; grid-template-columns: minmax(0,1fr) 220px; overflow: hidden; border-radius: 20px; min-height: 190px; margin-bottom: 20px; position: relative; }
+    .hero-copy { padding: 28px clamp(20px,3vw,36px); position: relative; z-index: 1; }
     .hero .eyebrow { color: var(--lime); }
-    .hero h1 { max-width: 565px; font-size: clamp(31px,3.3vw,44px); margin-bottom: 10px; }
-    .hero p { color: #bbcdc3; font-size: 13px; max-width: 470px; margin-bottom: 20px; }
-    .hero-art { position: relative; overflow: hidden; background: radial-gradient(circle at 70% 57%, #365d4b, transparent 65%); }
-    .orbit { position: absolute; border-radius: 50%; border: 1px solid rgba(224,245,154,.32); transform: rotate(-25deg); }
-    .orbit.one { width: 290px; height: 290px; top: -16px; right: -82px; }
-    .orbit.two { width: 193px; height: 193px; top: 34px; right: -26px; border-width: 24px; border-color: rgba(222,244,165,.08); }
-    .orbit.three { width: 95px; height: 95px; top: 85px; right: 50px; background: var(--lime); border: 14px solid #d3eba0; box-shadow: 0 0 0 31px rgba(223,245,154,.09); }
-    .art-star { position: absolute; top: 22px; right: 138px; color: var(--lime); font-size: 29px; }
-    .metric { min-height: 108px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 19px 20px; }
-    .metric small { color: var(--muted); font-size: 11px; font-weight: 700; }
-    .metric strong { display: block; font-family: 'Plus Jakarta Sans'; font-size: 27px; letter-spacing: -.075em; margin-top: 11px; line-height: 1; }
-    .metric-icon { width: 31px; height: 31px; border-radius: 9px; display: grid; place-items: center; background: #eaf2d5; color: #53732c; }
-    .metric-icon.blue { background: #e5effd; color: #356594; }
-    .metric-icon.peach { background: #fff0df; color: #a35e41; }
-    .section-head { display: flex; align-items: center; justify-content: space-between; margin: 32px 0 14px; gap: 12px; flex-wrap: wrap; }
-    .section-head h2 { font-size: 19px; margin: 0; }
-    .section-head p { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
-    .workbook-card, .rubric-tile { display: flex; flex-direction: column; align-items: stretch; text-align: left; width: 100%; min-height: 167px; padding: 20px; background: white; border: 1px solid var(--line); border-radius: 17px; box-shadow: var(--shadow); transition: transform .2s, border-color .2s, box-shadow .2s; }
-    button.workbook-card:hover, button.rubric-tile:hover { transform: translateY(-3px); border-color: #aac9a5; box-shadow: 0 19px 32px rgba(31,54,42,.085); }
-    .tile-top { display: flex; justify-content: space-between; align-items: center; }
-    .tile-icon { width: 34px; height: 34px; border-radius: 10px; background: #e6f1e4; color: #457a5e; display: grid; place-items: center; font-weight: 800; }
-    .tile-icon.sky { background: #e9f1ff; color: #356a9b; }
-    .tile-title { font-family: 'Plus Jakarta Sans'; font-size: 14px; font-weight: 800; letter-spacing: -.04em; line-height: 1.35; margin: 18px 0 4px; word-break: break-word; }
-    .tile-meta { color: var(--muted); font-size: 11px; }
-    .tile-arrow { color: #7e9d7d; font-size: 21px; }
-    .empty { border: 1px dashed #c5d5c6; background: #fbfcf9; border-radius: 16px; padding: 30px; text-align: center; color: var(--muted); }
-    .empty strong { display: block; color: var(--ink); font-family: 'Plus Jakarta Sans'; font-size: 16px; margin: 7px 0; }
-    .empty .tile-icon { margin: 0 auto 13px; }
-    .note { border-radius: 13px; border: 1px solid #e3ecca; background: #f6f9e9; padding: 14px 16px; color: #526547; font-size: 12px; line-height: 1.55; }
-    .note.warn { background: #fff7eb; border-color: #f6e4c8; color: #815b29; }
-    .note.error { background: #fff1ec; border-color: #efd2c9; color: #883f38; }
-    .back-link { border: none; background: none; color: #647f6c; font-size: 12px; font-weight: 800; padding: 0; margin: 0 0 18px; }
-    .back-link:hover { color: var(--forest); }
-    .pill { border-radius: 100px; padding: 5px 10px; background: #e9efe8; color: #406b56; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-    .pill.approved, .pill.locked { background: #e6f2dc; color: #376d3f; }
-    .pill.inreview { background: #e5edf9; color: #3c6492; }
-    .pill.new { background: #fff3de; color: #916b2f; }
-    .pill.historical { background: #ebedef; color: #667472; }
-    .task-banner { padding: 24px 27px; display: flex; justify-content: space-between; gap: 20px; align-items: center; background: #eaf1e7; border: 1px solid #dae8d5; border-radius: var(--radius); margin-bottom: 17px; }
-    .task-banner strong { font-family: 'Plus Jakarta Sans'; font-size: 18px; letter-spacing: -.05em; display: block; }
-    .task-banner small { display: block; color: var(--muted); margin-top: 5px; font-size: 11px; }
-    .task-banner .badge { border-radius: 9px; padding: 9px 13px; background: white; color: #4e755b; font-size: 11px; font-weight: 800; white-space: nowrap; }
-    .toolbar { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; flex-wrap: wrap; }
-    .search { display: flex; align-items: center; gap: 9px; background: white; border: 1px solid var(--line); border-radius: 11px; padding: 0 13px; flex: 1; min-width: 190px; max-width: 400px; }
-    .search input { border: 0; box-shadow: none; outline: 0; background: transparent; min-height: 43px; width: 100%; font-size: 12px; }
-    .filters { display: flex; gap: 4px; padding: 4px; background: #eaece7; border-radius: 11px; }
-    .filter { border: 0; background: transparent; border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 800; color: #687b6d; }
-    .filter.active { background: white; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: white; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
-    th { color: #81918a; font-size: 10px; letter-spacing: .11em; text-transform: uppercase; font-weight: 800; background: #fcfdfb; }
-    td, th { padding: 14px 18px; border-bottom: 1px solid #edf0ea; }
-    tr:last-child td { border-bottom: 0; }
-    tbody tr:hover { background: #fafcf7; }
-    .student-cell { display: flex; align-items: center; gap: 10px; }
-    .student-avatar { width: 31px; height: 31px; border-radius: 10px; background: #eaf0dd; color: #53735c; display: grid; place-items: center; font-size: 10px; font-weight: 800; flex: none; }
-    .student-name { font-weight: 800; display: block; }
-    .student-email { color: #81918a; font-size: 10px; display: block; margin-top: 2px; }
-    .form-field { margin-bottom: 17px; min-width: 0; }
-    label, .field-label { display: block; color: #334b40; font-size: 11px; font-weight: 800; margin-bottom: 7px; }
-    .form-field small, .helper { display: block; color: var(--muted); font-size: 11px; margin-top: 7px; line-height: 1.5; }
-    input:not([type=checkbox]):not([type=radio]), select, textarea { display: block; width: 100%; border: 1px solid #d8e1d8; border-radius: 10px; padding: 11px 12px; background: white; color: var(--ink); font-size: 12px; transition: border-color .16s, box-shadow .16s; }
-    input:not([type=checkbox]):not([type=radio]):focus, textarea:focus, select:focus { border-color: #8dbb9c; box-shadow: 0 0 0 3px rgba(164,206,157,.17); outline: none; }
-    textarea { min-height: 96px; resize: vertical; line-height: 1.6; }
-    input[type=file] { max-width: 100%; }
-    input[type=checkbox] { accent-color: #386955; }
-    .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 18px; }
+    .hero h1 { max-width: 580px; font-size: clamp(26px,2.8vw,36px); margin-bottom: 8px; }
+    .hero p { color: #bbcdc3; font-size: 13px; max-width: 480px; margin-bottom: 16px; }
+    .hero-art { position: relative; overflow: hidden; background: radial-gradient(circle at 70% 57%, #365d4b, transparent 65%); display: flex; align-items: center; justify-content: center; }
+    .art-star { font-size: 64px; color: var(--lime); opacity: .7; }
+    .metric { padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
+    .metric small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+    .metric strong { font-size: 26px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; color: var(--ink); }
+    .metric-icon { width: 38px; height: 38px; border-radius: 10px; background: #eaf3e5; color: #436f4c; display: grid; place-items: center; font-size: 16px; }
+    .metric-icon.blue { background: #e7eff8; color: #2e5f8f; }
+    .metric-icon.peach { background: #faede6; color: #9c4c36; }
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 24px 0 14px; flex-wrap: wrap; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .workbook-card { text-align: left; background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; transition: transform .18s, border-color .18s, box-shadow .18s; display: flex; flex-direction: column; width: 100%; box-shadow: var(--shadow); }
+    .workbook-card:hover { transform: translateY(-2px); border-color: #accab5; box-shadow: 0 16px 36px rgba(27,49,41,.09); }
+    .tile-top { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 12px; }
+    .tile-icon { width: 32px; height: 32px; border-radius: 8px; background: #eef5e9; color: #3d6a4c; display: grid; place-items: center; font-size: 14px; }
+    .tile-icon.sky { background: #e3effc; color: #2d5d8e; }
+    .tile-title { font-size: 14px; font-weight: 800; color: var(--ink); line-height: 1.35; margin-bottom: 4px; }
+    .tile-meta { font-size: 11px; color: var(--muted); }
+    .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: .02em; }
+    .pill.green { background: #e1f4d8; color: #245829; }
+    .pill.yellow { background: #fef3c7; color: #854d0e; }
+    .pill.blue { background: #dbeafb; color: #1e40af; }
+    .pill.gray { background: #e2e8f0; color: #475569; }
+    .table-container { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: white; }
+    table.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+    table.data-table th { background: #f7faf5; padding: 10px 14px; font-weight: 800; color: #375345; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    table.data-table td { padding: 11px 14px; border-bottom: 1px solid #edf1eb; }
+    table.data-table tr:last-child td { border-bottom: none; }
+    table.data-table tr:hover td { background: #fbfdf9; }
+    .studio-split { display: grid; grid-template-columns: 460px minmax(0,1fr); gap: 20px; align-items: start; }
+    .doc-viewer-panel { position: sticky; top: 80px; max-height: calc(100vh - 100px); display: flex; flex-direction: column; background: white; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .doc-viewer-head { padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8faf6; display: flex; align-items: center; justify-content: space-between; }
+    .doc-viewer-body { flex: 1; overflow-y: auto; padding: 16px; background: #fafbfc; }
+    .evidence-anchor { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid #bae6fd; margin: 2px 0; }
+    .evidence-anchor:hover { background: #bae6fd; }
+    .criteria-stack { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+    .criterion-card { background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+    .criterion-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .observable-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #f9fbf8; margin-bottom: 6px; border: 1px solid #ebf2e8; }
+    .observable-row input[type="checkbox"] { margin-top: 3px; transform: scale(1.15); cursor: pointer; }
+    .observable-text { font-size: 12px; line-height: 1.45; flex: 1; }
+    .observable-share { font-size: 10px; font-weight: 800; color: #5b7c62; background: #e8f3e2; padding: 2px 6px; border-radius: 4px; }
+    .form-field { margin-bottom: 14px; }
+    .form-field label { display: block; font-size: 11px; font-weight: 800; color: #2e443c; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+    .form-field input, .form-field select, .form-field textarea { width: 100%; border: 1px solid #cfdcd2; border-radius: 8px; padding: 9px 12px; background: white; font-size: 13px; color: var(--ink); }
+    .form-field textarea { min-height: 75px; resize: vertical; line-height: 1.45; }
+    .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
     .form-grid.three { grid-template-columns: repeat(3,minmax(0,1fr)); }
-    .form-panel { max-width: 860px; padding: clamp(21px,3vw,32px); }
-    .step-strip { display: flex; gap: 7px; margin: 0 0 27px; }
-    .step-strip span { padding: 7px 10px; background: #eaf0e4; border-radius: 6px; color: #557255; font-size: 10px; font-weight: 800; }
-    .step-strip span:first-child { background: var(--lime); color: #294334; }
-    .studio-head { display: flex; align-items: center; gap: 15px; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; }
-    .studio-head h1 { margin: 0; font-size: clamp(24px,2.7vw,36px); }
-    .studio-layout { display: grid; grid-template-columns: minmax(250px,.88fr) minmax(360px,1.55fr); gap: 18px; align-items: start; }
-    .evidence-panel { position: sticky; top: 90px; padding: 22px; }
-    .evidence-panel .big-number { font-family: 'Plus Jakarta Sans'; font-size: 35px; letter-spacing: -.08em; line-height: 1; font-weight: 800; }
-    .evidence-panel .big-number small { font-family: 'DM Sans'; font-size: 12px; color: var(--muted); letter-spacing: 0; font-weight: 500; }
-    .progress-line { width: 100%; height: 7px; border-radius: 10px; background: #e8ede6; margin: 17px 0 7px; overflow: hidden; }
-    .progress-line span { display: block; height: 100%; background: #92c483; border-radius: inherit; transition: width .2s; }
-    .file-link { display: flex; gap: 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid #eef2eb; text-decoration: none; color: var(--ink); }
-    .file-link:last-child { border-bottom: none; }
-    .file-link:hover strong { text-decoration: underline; }
-    .file-link strong { display: block; font-size: 11px; word-break: break-all; }
-    .file-link small { color: var(--muted); font-size: 10px; display: block; margin-top: 3px; }
-    .file-icon { display: grid; place-items: center; width: 28px; height: 29px; border-radius: 7px; background: #ebf2fc; color: #4575a0; font-size: 11px; font-weight: 800; flex: none; }
-    .criteria-stack { display: flex; flex-direction: column; gap: 12px; }
-    .criterion-card { background: white; border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow); overflow: hidden; }
-    .criterion-card summary { list-style: none; display: flex; gap: 13px; align-items: center; padding: 16px 19px; cursor: pointer; }
-    .criterion-card summary::-webkit-details-marker { display: none; }
-    .criterion-no { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 10px; background: #e9efdb; color: #5b7b4e; font-size: 11px; font-weight: 800; flex: none; }
-    .criterion-meta { flex: 1; min-width: 0; }
-    .criterion-meta strong { display: block; font-size: 13px; letter-spacing: -.025em; }
-    .criterion-meta small { color: var(--muted); display: block; font-size: 10px; margin-top: 4px; }
-    .criterion-result { min-width: 45px; text-align: center; font-family: 'Plus Jakarta Sans'; font-size: 15px; font-weight: 800; color: #416d52; }
-    .chevron { font-size: 20px; color: #95a99a; transition: transform .2s; }
-    details[open] .chevron { transform: rotate(180deg); }
-    .criterion-body { border-top: 1px solid var(--line); padding: 20px; }
-    .band { margin-bottom: 17px; }
-    .band-head { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #687d74; font-weight: 800; margin-bottom: 10px; }
-    .obs { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; cursor: pointer; font-size: 11px; line-height: 1.5; }
-    .obs input { margin: 2px 0 0; width: 16px; height: 16px; flex: none; }
-    .obs em { color: #86988d; font-size: 10px; font-style: normal; font-weight: 800; margin-right: 3px; }
-    .md-override { border-radius: 10px; background: #f2f6e8; padding: 9px 12px; margin-bottom: 20px; }
-    .note-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .score-footer { display: flex; align-items: center; justify-content: space-between; background: #f7faf4; border-radius: 10px; padding: 10px 13px; color: #4b7153; font-size: 11px; font-weight: 800; margin-top: 17px; gap: 8px; }
-    .feedback-card { padding: 24px; margin-top: 15px; }
-    .feedback-card h3 { margin-bottom: 4px; }
-    .review-dock { position: sticky; bottom: 16px; z-index: 9; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: var(--forest); color: white; border-radius: 14px; padding: 12px 15px; margin-top: 18px; box-shadow: 0 15px 38px rgba(11,36,27,.22); }
-    .review-dock small { font-size: 11px; color: #c6d5ca; }
-    .review-dock .actions { justify-content: flex-end; }
-    .review-dock .btn { min-height: 37px; }
-    .review-dock .btn-ghost { color: white; }
-    .subtle-rule { height: 1px; background: var(--line); border: 0; margin: 23px 0; }
-    .editor-layout { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(225px,.65fr); gap: 19px; align-items: start; }
-    .editor-side { position: sticky; top: 90px; }
-    .editor-criterion { border: 1px solid var(--line); border-radius: 14px; background: white; padding: 20px; margin-bottom: 12px; }
-    .editor-band { margin: 11px 0 0; }
-    .editor-band textarea { min-height: 70px; }
-    .mapping-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
-    .mapping-row label { flex: 1; margin: 0; }
-    .mapping-row input { width: 85px !important; }
-    .confirm-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 11px; line-height: 1.5; font-weight: 700; }
-    .confirm-row input { margin-top: 2px; width: 16px; height: 16px; flex: none; }
-    .history-list { border-left: 2px solid #dbe8d5; padding-left: 13px; }
-    .history-entry { padding: 0 0 15px 12px; position: relative; font-size: 11px; }
-    .history-entry:before { content: ''; width: 8px; height: 8px; border-radius: 50%; position: absolute; left: -18px; top: 4px; background: #84b18d; }
-    .history-entry small { display: block; color: #8d9e90; margin-top: 3px; }
-    .toast { position: fixed; right: 23px; top: 80px; z-index: 100; max-width: min(390px, calc(100vw - 36px)); padding: 13px 16px; border-radius: 12px; background: var(--forest); color: white; box-shadow: 0 20px 45px rgba(12,32,24,.18); display: flex; align-items: start; gap: 10px; font-size: 12px; line-height: 1.55; }
-    .toast.error { background: #8a423b; }
-    .toast button { color: white; background: none; border: 0; padding: 0 0 0 8px; font-size: 17px; }
-    .busy-bar { position: fixed; height: 3px; width: 100%; background: linear-gradient(90deg, var(--lime-deep), #b8dc91, var(--blue)); left: 0; top: 0; z-index: 200; transform-origin: left; animation: pulsebar 1.7s ease-in-out infinite alternate; }
-    @keyframes pulsebar { from { transform: scaleX(.16); opacity: .7; } to { transform: scaleX(.95); opacity: 1; } }
+    .note { padding: 12px 14px; border-radius: 10px; background: #edf5ea; color: #2a5538; font-size: 12px; line-height: 1.5; border-left: 3px solid #6aa06a; }
+    .note.warn { background: #fef8ee; color: #85531d; border-left-color: #d99b3b; }
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--forest); color: white; padding: 12px 18px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; z-index: 100; max-width: 440px; }
+    .toast.error { background: #8e2c21; }
+    .toast button { background: none; border: none; color: white; font-size: 16px; padding: 0 4px; }
+    .busy-bar { height: 3px; background: linear-gradient(90deg, #dff59a, #4ade80, #38bdf8); position: fixed; top: 0; left: 0; right: 0; z-index: 999; animation: pulse 1.2s infinite ease-in-out; }
+    @keyframes pulse { 0% { opacity: .4; } 50% { opacity: 1; } 100% { opacity: .4; } }
+    .dictate-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 6px; background: #f3f4f6; border: 1px solid #d1d5db; font-size: 11px; font-weight: 700; color: #374151; }
+    .dictate-btn.active { background: #fee2e2; color: #991b1b; border-color: #fca5a5; animation: pulse 1s infinite; }
     .mobile-nav { display: none; }
-    @media (max-width: 1070px) {
-      .app-shell { grid-template-columns: 75px minmax(0,1fr); }
-      .sidebar { padding-inline: 11px; }
-      .brand { padding: 0 9px 39px; }
-      .brand-name, .brand-sub, .nav-label, .nav-link span, .side-bottom { display: none; }
-      .nav-link { justify-content: center; padding: 0; }
-      .hero { grid-template-columns: minmax(0,1fr) 170px; }
-      .studio-layout { grid-template-columns: minmax(230px,.8fr) minmax(350px,1.4fr); }
-    }
-    @media (max-width: 790px) {
-      .app-shell { display: block; }
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 1fr; }
       .sidebar { display: none; }
-      .mobile-brand { display: flex; align-items: center; gap: 9px; font-family: 'Plus Jakarta Sans'; font-size: 14px; font-weight: 800; letter-spacing: -.055em; }
-      .mobile-brand .brand-mark { width: 26px; height: 26px; border-radius: 7px; box-shadow: none; }
-      .mobile-brand svg { width: 16px; height: 16px; }
-      .topbar { height: 56px; padding: 0 18px; }
-      .breadcrumbs { display: none; }
-      .topbar-right { gap: 6px; }
-      .connection { font-size: 10px; padding: 6px 8px; }
-      main { padding: 24px 16px calc(105px + env(safe-area-inset-bottom)); }
-      .mobile-nav { display: flex; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 30; background: rgba(255,255,255,.97); border-top: 1px solid var(--line); padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); justify-content: space-around; box-shadow: 0 -10px 30px rgba(0,0,0,.045); }
-      .mobile-nav .nav-link { flex: 1; border-radius: 9px; min-height: 45px; padding: 5px 3px; display: flex; flex-direction: column; gap: 3px; justify-content: center; color: #87968b; font-size: 9px; }
-      .mobile-nav .nav-link span { display: inline; }
+      .mobile-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: var(--forest); z-index: 50; border-top: 1px solid #284439; justify-content: space-around; align-items: center; }
+      .mobile-nav .nav-link { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 0; min-height: unset; justify-content: center; }
       .mobile-nav .nav-link svg { width: 18px; height: 18px; }
-      .mobile-nav .nav-link.active { background: #eff5e8; color: #346047; box-shadow: none; }
-      .obs { font-size: 14px; line-height: 1.55; padding: 10px 0; }
-      .obs input { width: 19px; height: 19px; }
-      .criterion-meta strong { font-size: 14px; }
-      .form-field label, .field-label { font-size: 12px; }
-      input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px; }
-      .btn { min-height: 44px; font-size: 13px; }
-      .grid-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
-      .studio-layout, .editor-layout { grid-template-columns: 1fr; }
-      .evidence-panel, .editor-side { position: static; }
-      .studio-layout { gap: 13px; }
-      .review-dock { bottom: calc(65px + env(safe-area-inset-bottom)); }
-      .hero { grid-template-columns: minmax(0,1fr) 100px; }
-      .hero-art .orbit { right: -140px; }
-      .hero-art .orbit.three { right: -26px; }
+      .studio-split { grid-template-columns: 1fr; }
+      .doc-viewer-panel { position: static; height: 350px; }
     }
     @media (max-width: 520px) {
-      .grid-3, .grid-2, .form-grid, .form-grid.three { grid-template-columns: 1fr; }
-      .hero { display: block; min-height: 220px; }
-      .hero-copy { padding: 27px 23px; }
-      .hero h1 { font-size: 29px; max-width: 260px; }
-      .hero-art { position: absolute; width: 140px; height: 140px; right: -64px; top: 27px; opacity: .35; pointer-events: none; }
-      .grid-3.metrics { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 7px; }
-      .metric { padding: 13px 10px; min-height: 88px; }
-      .metric strong { font-size: 19px; }
-      .metric small { font-size: 9px; }
-      .metric-icon { display: none; }
-      .workbook-card { min-height: 138px; }
-      .task-banner { display: block; padding: 20px; }
-      .task-banner .badge { display: inline-block; margin-top: 14px; }
-      .table-wrap { border: 0; background: transparent; overflow: visible; }
-      table, tbody, tr, td { display: block; width: 100%; }
-      thead { display: none; }
-      tbody tr { background: white; border: 1px solid var(--line); border-radius: 13px; margin-bottom: 9px; padding: 12px; }
-      td { border: 0; padding: 4px 3px; }
-      td:nth-child(2), td:nth-child(3) { display: inline-block; width: auto; padding-right: 12px; }
-      td:last-child { float: right; margin-top: -6px; }
-      tbody tr::after { content: ''; display: block; clear: both; }
-      .review-dock { padding: 12px; }
-      .review-dock .actions { width: 100%; }
-      .review-dock .actions .btn { flex: 1; }
-      .toast { right: 14px; top: 68px; }
+      .topbar { padding: 0 12px; }
+      .header-row { flex-direction: column; align-items: flex-start; }
+      .form-grid, .form-grid.three, .grid-2, .grid-3 { grid-template-columns: 1fr; }
     }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
   </style>
 </head>
 <body>
   <div id="busy-bar" class="busy-bar" hidden></div>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Main navigation">
-      <a class="brand" href="#overview" data-nav="overview"><span class="brand-mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17l4 3 10-12-3-3L5 17zM5 17l-1 4 5-1M14 7l3 3"/></svg></span><span><span class="brand-name">lesson<span style="color:var(--lime)">grader.</span></span><span class="brand-sub">the teacher's studio</span></span></a>
+    <aside class="sidebar" aria-label="Teacher's Studio Navigation">
+      <a class="brand" href="#overview" data-nav="overview">
+        <span class="brand-mark">TS</span>
+        <span>
+          <span class="brand-name">Teacher's Studio</span>
+          <span class="brand-sub">Lesson Grader</span>
+        </span>
+      </a>
       <div class="nav-label">Workspace</div>
       <nav class="side-nav">
         <button class="nav-link active" data-nav="overview" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button>
         <button class="nav-link" data-nav="workbooks" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><span>Workbooks</span></button>
-        <button class="nav-link" data-nav="rubrics" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4zm0 16c0-1.7 1.3-3 3-3h13M8 8h8m-8 4h5"/></svg><span>Rubric library</span></button>
+        <button class="nav-link" data-nav="table" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span>Class Table</span></button>
+        <button class="nav-link" data-nav="rubrics" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4zm0 16c0-1.7 1.3-3 3-3h13M8 8h8m-8 4h5"/></svg><span>Rubric Library</span></button>
         <button class="nav-link" data-nav="classroom" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 11h8m-8 4h5M7 4V2m10 2V2"/></svg><span>Classroom</span></button>
+        <button class="nav-link" data-nav="audit" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 14l2 2 4-4"/></svg><span>Registration & Samples</span></button>
         <button class="nav-link" data-nav="settings" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 13.5l2-1.5-2-1.5-.5-2 1-2.3-2.8-2.8-2.3 1-2-.5L12 2l-1.5 2-2 .5-2.3-1L3.4 6.3l1 2.3-.5 2L2 12l2 1.5.5 2-1 2.3 2.8 2.8 2.3-1 2 .5L12 22l1.5-2 2-.5 2.3 1 2.8-2.8-1-2.3z"/></svg><span>Settings</span></button>
       </nav>
       <div class="side-bottom">
-        <div class="side-note"><span class="tiny">A better way to assess</span><strong>Good judgment<br>stays human.</strong><small>AI prepares a draft. You decide what counts.</small></div>
-        <div class="account"><span class="avatar">DG</span><div><strong>Teacher workspace</strong><small id="account-email">Connecting…</small></div></div>
+        <div class="side-note">
+          <span class="tiny">Teacher's Studio</span>
+          <strong>Human judgment remains primary.</strong>
+          <small>AI proposes drafts and evidence. You make every grading decision.</small>
+        </div>
+        <div class="account">
+          <span class="avatar" id="user-avatar">TS</span>
+          <div><strong>Teacher account</strong><small id="account-email">Connecting…</small></div>
+        </div>
       </div>
     </aside>
-
     <div class="page-shell">
-      <header class="topbar"><div class="mobile-brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17l4 3 10-12-3-3L5 17zM5 17l-1 4 5-1"/></svg></span>lessongrader.</div><div class="breadcrumbs" id="breadcrumb"><span>Workspace</span><span class="crumb-sep">/</span><strong>Overview</strong></div><div class="topbar-right"><span class="preview-flag">DESIGN PREVIEW</span><span class="connection" id="connection"><span class="dot"></span><span id="connection-text">Connecting…</span></span><span class="avatar" aria-hidden="true">DG</span></div></header>
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" class="back-btn" id="top-back-btn" aria-label="Go back to previous screen">← Back</button>
+          <div class="breadcrumbs" id="breadcrumb"><span>Teacher's Studio</span><span class="crumb-sep">/</span><strong>Overview</strong></div>
+        </div>
+        <div class="topbar-right">
+          <span class="preview-flag">DESIGN PREVIEW</span>
+          <span class="connection" id="connection"><span class="dot"></span><span id="connection-text">Connected</span></span>
+        </div>
+      </header>
       <main id="main">
+        <!-- 1. OVERVIEW -->
         <section class="view" id="view-overview" aria-labelledby="overview-title">
-          <div class="hero"><div class="hero-copy"><div class="eyebrow">Teacher workspace · assessment, considered</div><h1 id="overview-title">Every project deserves a fair look.</h1><p>A thoughtful space to organise rubrics, review evidence and give feedback that matters. You make the final call.</p><button type="button" class="btn btn-lime" data-nav="workbooks">Open workbooks <span aria-hidden="true">↗</span></button></div><div class="hero-art" aria-hidden="true"><div class="orbit one"></div><div class="orbit two"></div><div class="orbit three"></div><span class="art-star">✳</span></div></div>
-          <div class="grid-3 metrics"><div class="card metric"><div><small>Workbooks</small><strong id="overview-workbooks">—</strong></div><span class="metric-icon">▤</span></div><div class="card metric"><div><small>Shared rubrics</small><strong id="overview-rubrics">—</strong></div><span class="metric-icon blue">◇</span></div><div class="card metric"><div><small>Gemini ready</small><strong id="overview-gemini" style="font-size:17px;margin-top:15px">—</strong></div><span class="metric-icon peach">✳</span></div></div>
-          <div class="section-head"><div><h2>Pick up where you left off</h2><p>Your grading workbooks, straight from Google Drive.</p></div><button type="button" class="btn btn-sm" data-nav="create">+ New workbook</button></div><div class="grid-3" id="overview-list"></div>
-          <div class="note" style="margin-top:24px">✳ &nbsp;Rubric first. Every task uses its own reviewed criteria and marks — no project is graded against someone else’s rubric.</div>
+          <div class="hero">
+            <div class="hero-copy">
+              <div class="eyebrow">Teacher's Studio · Professional Assessment Platform</div>
+              <h1 id="overview-title">Rigorous assessment, streamlined.</h1>
+              <p>Task-agnostic rubrics, deterministic scoring, Drive audit integration, and teacher-controlled moderation.</p>
+              <div class="actions">
+                <button type="button" class="btn btn-lime" data-nav="workbooks">Open Workbooks ↗</button>
+                <button type="button" class="btn btn-dark" data-nav="table">View Class Table</button>
+              </div>
+            </div>
+            <div class="hero-art"><span class="art-star">✳</span></div>
+          </div>
+          <div class="grid-3 metrics">
+            <div class="card metric"><div><small>Grading Workbooks</small><strong id="overview-workbooks">0</strong></div><span class="metric-icon">▤</span></div>
+            <div class="card metric"><div><small>Shared Rubrics</small><strong id="overview-rubrics">0</strong></div><span class="metric-icon blue">◇</span></div>
+            <div class="card metric"><div><small>Audit Compliance</small><strong id="overview-audit" style="font-size:18px">Active</strong></div><span class="metric-icon peach">✓</span></div>
+          </div>
+          <div class="section-head"><div><h2>Active Grading Workbooks</h2><p>Select a project workbook to manage tasks and grade students.</p></div><button type="button" class="btn btn-sm btn-dark" data-nav="create">+ New Workbook</button></div>
+          <div class="grid-3" id="overview-list"></div>
         </section>
 
-        <section class="view" id="view-workbooks" hidden aria-labelledby="workbooks-title"><div class="header-row"><div><div class="eyebrow">Your library</div><h1 id="workbooks-title">Workbooks</h1><p class="lead">A home for each course and project. Open a workbook to choose a task and its rubric.</p></div><div class="actions"><button class="btn" type="button" id="refresh-workbooks">↻ Refresh</button><button class="btn btn-dark" type="button" data-nav="create">+ Create workbook</button></div></div><div class="grid-3" id="workbook-list"></div></section>
+        <!-- 2. WORKBOOKS -->
+        <section class="view" id="view-workbooks" hidden aria-labelledby="workbooks-title">
+          <div class="header-row"><div><div class="eyebrow">Library</div><h1 id="workbooks-title">Grading Workbooks</h1><p class="lead">Select a course workbook from your Google Drive.</p></div><div class="actions"><button class="btn" type="button" id="refresh-workbooks">↻ Refresh</button><button class="btn btn-dark" type="button" data-nav="create">+ Create Workbook</button></div></div>
+          <div class="grid-3" id="workbook-list"></div>
+        </section>
 
-        <section class="view" id="view-workbook" hidden aria-labelledby="workbook-title"><button class="back-link" type="button" data-nav="workbooks">← All workbooks</button><div class="header-row"><div><div class="eyebrow">Grading workbook</div><h1 id="workbook-title">Choose a task</h1><p class="lead" id="workbook-subtitle">Select the project you want to work on.</p></div><button class="btn btn-dark" type="button" data-nav="create">+ New workbook</button></div><div class="section-head"><h2>Project tasks</h2></div><div class="grid-3" id="task-list"></div></section>
+        <!-- 3. WORKBOOK TASKS -->
+        <section class="view" id="view-workbook" hidden aria-labelledby="workbook-title">
+          <button class="back-link" type="button" data-nav="workbooks">← All Workbooks</button>
+          <div class="header-row" style="margin-top:12px"><div><div class="eyebrow">Grading Workbook</div><h1 id="workbook-title">Tasks &amp; Projects</h1><p class="lead" id="workbook-subtitle">Select a project task to open its student roster and rubric.</p></div><button class="btn btn-dark" type="button" data-nav="create">+ New Task</button></div>
+          <div class="grid-3" id="task-list"></div>
+        </section>
 
-        <section class="view" id="view-task" hidden aria-labelledby="task-title"><button class="back-link" type="button" id="back-to-workbook">← Workbook tasks</button><div class="header-row"><div><div class="eyebrow" id="task-eyebrow">Project workspace</div><h1 id="task-title">Task overview</h1><p class="lead" id="task-workbook-name"></p></div><div class="actions"><button class="btn" id="task-import" type="button">↧ Import from Classroom</button><button class="btn" id="task-add-student" type="button">+ Add student</button><button class="btn btn-dark" id="task-add-rubric" type="button">+ Add / review rubric</button></div></div><div id="task-notice"></div><form id="manual-student-form" class="card card-pad" hidden style="margin-bottom:16px;max-width:760px"><div class="eyebrow">Teacher-entered submission</div><h3>Add a student to this task</h3><p class="muted tiny">For work not linked to Classroom. Sheets holds this record; no Classroom grade is created.</p><div class="form-grid three"><div class="form-field"><label for="manual-name">Student name</label><input id="manual-name" required maxlength="160" placeholder="Student name"></div><div class="form-field"><label for="manual-email">School email (optional)</label><input id="manual-email" type="email" maxlength="180" placeholder="student@school.edu.au"></div><div class="form-field"><label for="manual-class">Class (optional)</label><input id="manual-class" maxlength="100" placeholder="e.g. 7TECHI"></div></div><div class="actions"><button class="btn btn-dark" type="submit">Add to workbook</button><button class="btn btn-ghost" id="cancel-manual" type="button">Cancel</button></div></form><div class="task-banner" id="task-profile-banner"></div><div class="grid-3 metrics"><div class="card metric"><div><small>Current submissions</small><strong id="stat-total">0</strong></div><span class="metric-icon">◎</span></div><div class="card metric"><div><small>Need review</small><strong id="stat-awaiting">0</strong></div><span class="metric-icon blue">◫</span></div><div class="card metric"><div><small>Approved</small><strong id="stat-approved">0</strong></div><span class="metric-icon peach">✓</span></div></div><div class="section-head"><div><h2>Student submissions</h2><p>Only you can approve a grade. Historical versions remain available below.</p></div></div><div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><span class="sr-only">Search students</span><input id="student-search" placeholder="Search students…" autocomplete="off"></label><div class="filters" role="group" aria-label="Submission filter"><button type="button" class="filter active" data-filter="current">Current</button><button type="button" class="filter" data-filter="review">Needs review</button><button type="button" class="filter" data-filter="all">All versions</button></div></div><div id="student-list"></div></section>
+        <!-- 4. TASK ROSTER -->
+        <section class="view" id="view-task" hidden aria-labelledby="task-title">
+          <button class="back-link" type="button" id="back-to-workbook">← Workbook Tasks</button>
+          <div class="header-row" style="margin-top:12px">
+            <div><div class="eyebrow" id="task-eyebrow">Project Workspace</div><h1 id="task-title">Task Overview</h1><p class="lead" id="task-workbook-name"></p></div>
+            <div class="actions">
+              <button class="btn" id="task-import" type="button">↧ Import Classroom</button>
+              <button class="btn" id="task-bulk-ai" type="button">✳ Bulk AI Draft</button>
+              <button class="btn" id="task-add-student" type="button">+ Add Student</button>
+              <button class="btn btn-dark" id="task-add-rubric" type="button">+ Review Rubric</button>
+            </div>
+          </div>
+          <div id="task-notice"></div>
+          <form id="manual-student-form" class="card card-pad" hidden style="margin-bottom:16px;max-width:760px">
+            <div class="eyebrow">Teacher-Entered Submission</div>
+            <h3>Add a Student Manually</h3>
+            <p class="muted tiny">For in-class physical projects without a Classroom submission.</p>
+            <div class="form-grid three">
+              <div class="form-field"><label for="manual-name">Student Name</label><input id="manual-name" required maxlength="160" placeholder="e.g. Alex Taylor"></div>
+              <div class="form-field"><label for="manual-email">School Email (optional)</label><input id="manual-email" type="email" maxlength="180" placeholder="student@school.edu.au"></div>
+              <div class="form-field"><label for="manual-class">Class (optional)</label><input id="manual-class" maxlength="100" placeholder="e.g. 7TECHI"></div>
+            </div>
+            <div class="actions"><button class="btn btn-dark" type="submit">Add Student</button><button class="btn btn-ghost" id="cancel-manual" type="button">Cancel</button></div>
+          </form>
+          <div class="task-banner" id="task-profile-banner"></div>
+          <div class="grid-3 metrics" style="margin-bottom:16px">
+            <div class="card metric"><div><small>Total Submissions</small><strong id="stat-total">0</strong></div><span class="metric-icon">◎</span></div>
+            <div class="card metric"><div><small>Awaiting Review</small><strong id="stat-awaiting">0</strong></div><span class="metric-icon blue">◫</span></div>
+            <div class="card metric"><div><small>Approved Grades</small><strong id="stat-approved">0</strong></div><span class="metric-icon peach">✓</span></div>
+          </div>
+          <div class="section-head">
+            <div><h2>Student Submissions</h2><p>Click a student to enter the Assessment Studio.</p></div>
+            <div class="actions">
+              <button type="button" class="btn btn-sm" id="btn-flag-incomplete">⚑ Flag Incomplete</button>
+              <button type="button" class="btn btn-sm" data-nav="audit">Drive Samples &amp; Audit →</button>
+            </div>
+          </div>
+          <div class="toolbar" style="display:flex;gap:12px;margin-bottom:14px;align-items:center;justify-content:space-between">
+            <div style="display:flex;gap:8px;align-items:center">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700"><input type="checkbox" id="select-all-students"> Select All</label>
+              <input id="student-search" placeholder="Search students…" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;font-size:12px">
+            </div>
+            <div class="filters" role="group"><button type="button" class="btn btn-sm active" data-filter="current">Current</button><button type="button" class="btn btn-sm" data-filter="review">Needs review</button><button type="button" class="btn btn-sm" data-filter="all">All</button></div>
+          </div>
+          <div id="student-list"></div>
+        </section>
 
-        <section class="view" id="view-grading" hidden aria-labelledby="student-title"><button class="back-link" type="button" id="back-to-task">← Task overview</button><div class="studio-head"><div><div class="eyebrow" id="grading-eyebrow">Assessment studio</div><h1 id="student-title">Student</h1><span id="student-meta" class="muted tiny"></span></div><div class="actions"><span class="pill" id="student-status">New</span><button type="button" class="btn" id="download-report">↓ Report PDF</button><button type="button" class="btn" id="lock-grade" hidden>🔒 Lock</button><button type="button" class="btn btn-dark" id="run-ai">✳ Draft with Gemini</button></div></div><div id="grading-warning"></div><div class="studio-layout"><aside class="card evidence-panel"><div class="eyebrow">Live assessment</div><div class="big-number"><span id="live-score">0</span><small id="live-score-outof"> / 0 marks</small></div><div style="margin-top:8px"><span class="pill" id="live-grade">Not assessed</span></div><div class="progress-line" aria-hidden="true"><span id="grade-progress" style="width:0%"></span></div><p class="muted tiny" id="review-progress">0 of 0 criteria have evidence</p><hr class="subtle-rule"><div class="eyebrow">Evidence from Drive</div><div id="evidence-files"></div><hr class="subtle-rule"><div class="eyebrow">Assessment history</div><div class="history-list" id="grade-history"></div></aside><div><div id="criterion-list" class="criteria-stack"></div><div class="card feedback-card"><div class="eyebrow">In your words</div><h3>Feedback for this student</h3><p class="muted tiny">A draft until you explicitly approve. Write feedback that feels useful and specific.</p><div class="form-field"><label for="feedback-well">What went well</label><textarea id="feedback-well" placeholder="Notice a specific strength in their work…"></textarea></div><div class="form-field"><label for="feedback-next">Where to grow</label><textarea id="feedback-next" placeholder="Offer an actionable next step…"></textarea></div><div class="form-field" style="margin-bottom:0"><label for="feedback-goals">Goals for next time</label><textarea id="feedback-goals" placeholder="Set a clear, achievable goal…"></textarea></div></div></div></div><div class="review-dock" id="review-dock"><div><strong id="save-state" style="font-size:12px">Ready to review</strong><br><small>Drafts never publish themselves.</small></div><div class="actions"><button class="btn btn-ghost" id="new-reassessment" type="button" hidden>↻ Reassess</button><button class="btn" id="save-draft" type="button">Save draft</button><button class="btn btn-lime" id="approve-grade" type="button">Approve grade →</button></div></div></section>
+        <!-- 5. ASSESSMENT STUDIO (SPLIT SCREEN) -->
+        <section class="view" id="view-grading" hidden aria-labelledby="student-title">
+          <button class="back-link" type="button" id="back-to-task">← Task Overview</button>
+          <div class="header-row" style="margin-top:12px">
+            <div><div class="eyebrow" id="grading-eyebrow">Assessment Studio</div><h1 id="student-title">Student Name</h1><span id="student-meta" class="muted tiny"></span></div>
+            <div class="actions">
+              <span class="pill" id="student-status">New</span>
+              <button type="button" class="btn" id="download-report">↓ Report PDF</button>
+              <button type="button" class="btn" id="lock-grade" hidden>🔒 Lock Grade</button>
+              <button type="button" class="btn btn-dark" id="run-ai">✳ Draft with Gemini</button>
+            </div>
+          </div>
+          <div id="grading-warning"></div>
+          <div class="studio-split">
+            <!-- Left Pane: Scrollable Submitted Work & Deep Evidence Links -->
+            <div class="doc-viewer-panel">
+              <div class="doc-viewer-head">
+                <strong style="font-size:12px;color:var(--forest)">Submitted Folio &amp; Evidence</strong>
+                <span class="tiny muted" id="doc-file-count">0 files</span>
+              </div>
+              <div class="doc-viewer-body">
+                <div id="evidence-files" style="margin-bottom:14px"></div>
+                <div class="card card-pad" style="background:#f1f5f9;border:1px dashed #cbd5e1;text-align:center">
+                  <div style="font-size:24px;margin-bottom:6px">📄</div>
+                  <strong style="font-size:13px">Document View &amp; Evidence Anchors</strong>
+                  <p class="tiny muted" style="margin:4px 0 10px">Click any observable anchor below to jump to that evidence page.</p>
+                  <div id="deep-link-anchors"></div>
+                </div>
+                <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
+                <div class="eyebrow">Assessment History</div>
+                <div class="history-list" id="grade-history"></div>
+              </div>
+            </div>
+            <!-- Right Pane: Rubric Observables, Deductions, Notes, Feedback -->
+            <div>
+              <div class="card card-pad" style="margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                  <div>
+                    <span class="eyebrow">Live Score Calculation</span>
+                    <div style="font-size:28px;font-weight:800;font-family:'Plus Jakarta Sans',sans-serif">
+                      <span id="live-score">0</span><small id="live-score-outof" style="font-size:14px;color:var(--muted)"> / 0 marks</small>
+                      <span class="pill" id="live-grade" style="margin-left:8px;font-size:14px">Not assessed</span>
+                    </div>
+                  </div>
+                  <div id="deduction-box" style="text-align:right">
+                    <span class="tiny muted">Deduction Rule</span>
+                    <div id="live-deduction-info" style="font-size:12px;font-weight:700;color:#991b1b">No late deduction</div>
+                  </div>
+                </div>
+              </div>
+              <div id="criterion-list" class="criteria-stack"></div>
+              <div class="card card-pad" style="margin-bottom:16px">
+                <div class="eyebrow">Teacher Feedback &amp; Goals</div>
+                <div class="form-field"><label for="feedback-well">What Went Well</label><textarea id="feedback-well" placeholder="Specific strengths observed in student work…"></textarea></div>
+                <div class="form-field"><label for="feedback-next">Areas for Growth</label><textarea id="feedback-next" placeholder="Actionable recommendations for improvement…"></textarea></div>
+                <div class="form-field"><label for="feedback-goals">Goals for Next Assessment</label><textarea id="feedback-goals" placeholder="Targeted milestone for next project…"></textarea></div>
+              </div>
+              <div class="card card-pad" style="background:#f8faf6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div><strong id="save-state" style="font-size:12px">Ready to review</strong><br><small class="muted">Drafts never publish automatically.</small></div>
+                <div class="actions">
+                  <button class="btn btn-ghost" id="new-reassessment" type="button" hidden>↻ Reassess</button>
+                  <button class="btn" id="save-draft" type="button">Save Draft</button>
+                  <button class="btn btn-lime" id="approve-grade" type="button">Approve Grade →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <section class="view" id="view-rubrics" hidden aria-labelledby="rubrics-title"><div class="header-row"><div><div class="eyebrow">The foundation of fair grading</div><h1 id="rubrics-title">Rubric library</h1><p class="lead">Use a rubric for any project. Import an existing rubric, upload a document, or build one yourself. You always review it before activation.</p></div><button class="btn btn-dark" type="button" id="new-manual-rubric">+ Build rubric</button></div><div class="note" style="margin-bottom:18px">Every active task has its own rubric version. Replacing it for future submissions never silently changes a student's approved assessment.</div><div class="section-head"><div><h2>Shared rubrics</h2><p>Editable source files in your Drive library — not automatically active in grading.</p></div></div><div class="grid-3" id="shared-rubric-list"></div><div class="card card-pad" style="margin-top:20px"><div class="eyebrow">Have a rubric file?</div><h3>Upload & extract</h3><p class="muted tiny">PDF, Markdown or plain text · up to 8 MB. Gemini extracts a draft; you check every criterion and mark before using it.</p><div class="form-grid"><div class="form-field"><label for="upload-name">Rubric name</label><input id="upload-name" placeholder="e.g. Rube Goldberg — Design Process" maxlength="160"></div><div class="form-field"><label for="upload-file">Rubric document</label><input id="upload-file" type="file" accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"></div></div><button class="btn btn-dark" id="upload-rubric" type="button">Upload & extract</button></div></section>
+        <!-- 6. CLASS TABLE MATRIX -->
+        <section class="view" id="view-table" hidden aria-labelledby="table-title">
+          <div class="header-row">
+            <div><div class="eyebrow">Student Progression</div><h1 id="table-title">Class Table</h1><p class="lead">Multi-term assessment matrix with formative and summative progression tracking.</p></div>
+            <div class="actions">
+              <button class="btn" id="btn-sync-class-sheet" type="button">💾 Sync to Sheets</button>
+            </div>
+          </div>
+          <div class="card card-pad" style="margin-bottom:16px">
+            <div class="form-grid three">
+              <div class="form-field"><label for="table-term-pair">Term Pair</label><select id="table-term-pair"><option>Terms 1 &amp; 2</option><option>Terms 3 &amp; 4</option></select></div>
+              <div class="form-field"><label for="table-stage">Stage</label><select id="table-stage"><option>Stage 4 (Years 7-8)</option><option selected>Stage 5 (Years 9-10)</option><option>Stage 6 (Years 11-12)</option></select></div>
+              <div class="form-field"><label for="table-class">Class</label><select id="table-class"><option>7TECHI</option><option>8TECHI</option><option selected>9JEV</option></select></div>
+            </div>
+          </div>
+          <div class="table-container" id="class-table-matrix"></div>
+        </section>
 
-        <section class="view" id="view-rubric-editor" hidden aria-labelledby="editor-title"><button class="back-link" type="button" data-nav="rubrics">← Rubric library</button><div class="header-row"><div><div class="eyebrow">Rubric studio · review before grading</div><h1 id="editor-title">Build a task rubric</h1><p class="lead">Works for any subject project. Define criteria, marks and observable evidence; save an immutable version when it is ready.</p></div><span class="pill">Draft — not active</span></div><div class="editor-layout"><div><div class="card form-panel"><div class="step-strip"><span>01 Choose task</span><span>02 Review criteria</span><span>03 Activate</span></div><div class="form-grid"><div class="form-field"><label for="editor-workbook">Workbook</label><select id="editor-workbook"></select></div><div class="form-field"><label for="editor-task">Task</label><select id="editor-task"></select></div></div><div class="form-grid"><div class="form-field"><label for="editor-name">Rubric name</label><input id="editor-name" placeholder="e.g. Product Design — Process" maxlength="160"></div><div class="form-field"><label for="editor-source">Import from shared library (optional)</label><select id="editor-source"></select></div></div><div class="actions"><button class="btn" type="button" id="load-source">↧ Load selected rubric</button><button class="btn btn-ghost" type="button" id="editor-add-criterion">+ Add criterion</button></div><hr class="subtle-rule"><div class="section-head" style="margin:0 0 15px"><div><h2>Criteria & evidence</h2><p>Use one observable per line. A–E weights come from this workbook’s Setup sheet.</p></div></div><div id="editor-criteria"></div><button class="btn" type="button" id="editor-add-another">+ Add another criterion</button></div></div><aside class="editor-side"><div class="card card-pad"><div class="eyebrow">Rubric check</div><h3 id="editor-count">0 criteria</h3><p class="muted tiny" id="editor-total">0 marks allocated</p><div id="editor-scale"></div><div id="editor-mappings"></div><hr class="subtle-rule"><div class="note warn" style="margin-bottom:18px">AI extraction can omit or misread marks. Verify the original document. Unfamiliar grade bands require an explicit weight mapping — nothing is guessed.</div><label class="confirm-row"><input type="checkbox" id="editor-confirm"><span>I checked the wording, marks and grade mappings against the original rubric. I understand this version applies to future drafts; prior assessments stay pinned.</span></label><button class="btn btn-dark" id="activate-rubric" type="button" style="width:100%;margin-top:18px">Activate for this task →</button><p class="muted tiny" style="margin:12px 0 0">Activation adds a new version; existing versions are never deleted.</p></div></aside></div></section>
+        <!-- 7. RUBRICS LIBRARY & FORMATIVE GENERATOR -->
+        <section class="view" id="view-rubrics" hidden aria-labelledby="rubrics-title">
+          <div class="header-row">
+            <div><div class="eyebrow">Universal Rubrics</div><h1 id="rubrics-title">Rubric Library</h1><p class="lead">Task-specific reviewed rubric profiles with discrete observables, equal shares, and syllabus outcomes.</p></div>
+            <div class="actions">
+              <button class="btn" id="btn-generate-formative" type="button">✳ Generate Formative Rubric</button>
+              <button class="btn btn-dark" id="new-manual-rubric" type="button">+ Build Rubric</button>
+            </div>
+          </div>
+          <div class="section-head"><div><h2>Shared Rubrics</h2><p>Reviewed criteria profiles stored in Drive library.</p></div></div>
+          <div class="grid-3" id="shared-rubric-list"></div>
+          <div class="card card-pad" style="margin-top:20px">
+            <div class="eyebrow">Import from Document</div>
+            <h3>Upload Rubric File</h3>
+            <p class="muted tiny">PDF, Markdown or text up to 8 MB. Gemini extracts a draft; you check every criterion and mark before activating.</p>
+            <div class="form-grid">
+              <div class="form-field"><label for="upload-name">Rubric Title</label><input id="upload-name" placeholder="e.g. Water Filtration — Interim Rubric"></div>
+              <div class="form-field"><label for="upload-file">File</label><input id="upload-file" type="file" accept=".pdf,.md,.txt"></div>
+            </div>
+            <button class="btn btn-dark" id="upload-rubric" type="button">Upload &amp; Extract</button>
+          </div>
+        </section>
 
-        <section class="view" id="view-create" hidden aria-labelledby="create-title"><button class="back-link" type="button" data-nav="workbooks">← Workbooks</button><div class="eyebrow">New project</div><h1 id="create-title">Start with a blank canvas.</h1><p class="lead">A fresh grading workbook lives in your existing Google Drive library. Attach a reviewed rubric after creation.</p><form class="card form-panel" id="create-form"><div class="step-strip"><span>01 Course & task</span><span>02 Choose source</span><span>03 Review rubric</span></div><div class="form-grid three"><div class="form-field"><label for="create-code">Course code</label><input id="create-code" required placeholder="7TECHI" autocomplete="off"><small>Starts with 7–12 to determine the Stage.</small></div><div class="form-field"><label for="create-task">Project / task name</label><input id="create-task" required placeholder="Rube Goldberg Task" autocomplete="off" maxlength="90"></div><div class="form-field"><label for="create-year">Year</label><input id="create-year" required type="number" min="2000" max="2100"></div></div><div class="form-field"><label for="create-rubric">Shared rubric source (optional)</label><select id="create-rubric"><option value="">Choose later — no rubric active</option></select><small>Choosing a file registers its source. You still review and activate its criteria for this task.</small></div><div class="note warn" style="margin-bottom:22px">A new workbook has no students or grades. Reusing an existing workbook creates a backup before web-grading columns are added.</div><button class="btn btn-dark" type="submit">Create workbook →</button></form></section>
+        <!-- 8. RUBRIC BUILDER / EDITOR -->
+        <section class="view" id="view-rubric-editor" hidden aria-labelledby="editor-title">
+          <button class="back-link" type="button" data-nav="rubrics">← Rubric Library</button>
+          <div class="header-row" style="margin-top:12px"><div><div class="eyebrow">Rubric Studio</div><h1 id="editor-title">Build Task Rubric</h1><p class="lead">Define discrete observables for each performance level with equal mark allocation.</p></div><span class="pill yellow">Draft — Not Active</span></div>
+          <div class="grid-2">
+            <div class="card card-pad">
+              <div class="form-grid">
+                <div class="form-field"><label for="editor-workbook">Workbook</label><select id="editor-workbook"></select></div>
+                <div class="form-field"><label for="editor-task">Task Name</label><select id="editor-task"></select></div>
+              </div>
+              <div class="form-field"><label for="editor-name">Rubric Title</label><input id="editor-name" placeholder="e.g. Design Folio Assessment"></div>
+              <div class="form-field"><label for="editor-assessment-type">Assessment Type</label><select id="editor-assessment-type"><option value="Summative">Summative</option><option value="Formative">Formative</option></select></div>
+              <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
+              <div class="section-head"><div><h3>Criteria &amp; Observables</h3></div><button class="btn btn-sm" id="editor-add-criterion" type="button">+ Add Criterion</button></div>
+              <div id="editor-criteria"></div>
+            </div>
+            <div>
+              <div class="card card-pad" style="position:sticky;top:80px">
+                <div class="eyebrow">Rubric Verification</div>
+                <h3 id="editor-count">0 Criteria</h3>
+                <p class="muted tiny" id="editor-total">0 Total Marks</p>
+                <div id="editor-scale"></div>
+                <div id="editor-mappings"></div>
+                <div class="note warn" style="margin:16px 0">Unfamiliar performance bands require explicit 0–1 weights. Verified rubrics become immutable snapshots upon activation.</div>
+                <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-bottom:14px"><input type="checkbox" id="editor-confirm"> <span>I verified the criteria wording, marks, and grade band weights against the course syllabus.</span></label>
+                <button class="btn btn-dark" id="activate-rubric" type="button" style="width:100%">Activate Rubric for Task →</button>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <section class="view" id="view-classroom" hidden aria-labelledby="classroom-title"><div class="eyebrow">Google Classroom</div><h1 id="classroom-title">Connect your coursework.</h1><p class="lead">Link an assignment to a task. Import is a deliberate step; grading and Classroom grade sync never happen automatically in this web workflow.</p><div class="card form-panel"><div class="form-grid"><div class="form-field"><label for="class-workbook">Workbook</label><select id="class-workbook"></select></div><div class="form-field"><label for="class-task">Task</label><select id="class-task"></select></div></div><div class="form-field"><label for="class-course">Classroom course</label><select id="class-course"><option value="">Choose course</option></select></div><div class="note" style="margin:5px 0 18px">Only courses you teach appear here. Once linked, go back to the task and choose “Import from Classroom”.</div><h3>Assignments</h3><div id="class-coursework"></div></div></section>
+        <!-- 9. CLASSROOM -->
+        <section class="view" id="view-classroom" hidden aria-labelledby="classroom-title">
+          <div class="header-row"><div><div class="eyebrow">Google Classroom Integration</div><h1 id="classroom-title">Connect Coursework</h1><p class="lead">Link Classroom assignments to workbook tasks and flag incomplete submissions.</p></div></div>
+          <div class="card card-pad" style="margin-bottom:16px">
+            <div class="form-grid">
+              <div class="form-field"><label for="class-workbook">Workbook</label><select id="class-workbook"></select></div>
+              <div class="form-field"><label for="class-task">Task</label><select id="class-task"></select></div>
+            </div>
+            <div class="form-field"><label for="class-course">Classroom Course</label><select id="class-course"><option value="">Select Course</option></select></div>
+            <h3>Assignments</h3>
+            <div id="class-coursework"></div>
+          </div>
+          <div class="card card-pad" id="incomplete-messaging-card" hidden>
+            <div class="eyebrow">Flagged Incomplete Work</div>
+            <h3>Prepare Notification Messages</h3>
+            <p class="muted tiny">Review message content before sending to Google Classroom.</p>
+            <div id="classroom-messages-list"></div>
+            <div class="actions" style="margin-top:14px">
+              <button class="btn btn-dark" id="btn-send-classroom-messages" type="button">Approve &amp; Send Messages →</button>
+            </div>
+          </div>
+        </section>
 
-        <section class="view" id="view-settings" hidden aria-labelledby="settings-title"><div class="eyebrow">Connections & access</div><h1 id="settings-title">Settings</h1><p class="lead">Keep the key in the server's Script Properties, not in your browser, Git repository or workbook.</p><div class="grid-2" style="max-width:940px"><div class="card card-pad"><div class="eyebrow">AI connection</div><h3>Gemini API key</h3><p class="muted tiny">For the testing phase. You enter the key here; only the server stores it. The browser never receives it back.</p><div class="form-field"><label for="gemini-key">API key</label><input id="gemini-key" type="password" autocomplete="new-password" placeholder="Paste key here to save" spellcheck="false"><small>Shared by allowed teachers of this Apps Script project. Do not paste it into chat or commit it.</small></div><div class="actions"><button class="btn btn-dark" type="button" id="save-key">Save key</button><button class="btn" type="button" id="test-key">Test connection</button></div><p class="tiny" id="key-status" style="margin:16px 0 0;font-weight:800"></p></div><div class="card card-pad"><div class="eyebrow">Student data stays protected</div><h3>Teacher access</h3><p class="muted tiny">A school-restricted Apps Script deployment must run as the accessing user. The owner sets <code>LESSON_GRADER_ALLOWED_EMAILS</code> in Script Properties. Missing access denies all grading APIs.</p><div class="note">The connection test sends only a small “Ping” request — no student submissions, names or rubric files. When you run AI on a student, files are sent to Gemini to propose a <strong>draft only</strong>.</div><hr class="subtle-rule"><p class="tiny muted" style="margin:0">Read <strong>docs/IMPLEMENTATION.md</strong> for deployment, backup and key setup steps. Never deploy the web app as “Anyone · run as me”.</p></div></div></section>
+        <!-- 10. REGISTRATION, EVALUATION & WORK SAMPLES (AUDIT) -->
+        <section class="view" id="view-audit" hidden aria-labelledby="audit-title">
+          <div class="header-row"><div><div class="eyebrow">School Audit &amp; Moderation</div><h1 id="audit-title">Registration &amp; Work Samples</h1><p class="lead">Drive destination discovery, Registration &amp; Evaluation prefill, cohort lock, and HIGH/MED/LOW sample placement.</p></div></div>
+          
+          <div class="grid-2" style="margin-bottom:20px">
+            <!-- Step 1 & 2: Cohort Lock & Prefill -->
+            <div class="card card-pad">
+              <div class="eyebrow">Step 1: Cohort Verification</div>
+              <h3>Confirm Cohort Grading</h3>
+              <p class="muted tiny">Verify that all student marks and late deductions are finalised before sample selection.</p>
+              <div id="cohort-status-box" style="margin-bottom:12px"></div>
+              <button class="btn btn-dark" id="btn-lock-cohort" type="button">Verify &amp; Lock Cohort</button>
+              
+              <hr style="margin:20px 0;border:none;border-top:1px solid var(--line)">
+              <div class="eyebrow">Step 2: Designated Document Prefill</div>
+              <h3>Registration &amp; Evaluation</h3>
+              <p class="muted tiny">Auto-populated with outcomes, dates, and grade distribution. Add teacher evaluation via typing or dictation.</p>
+              <div class="form-field"><label for="prefill-doc-id">Document ID (optional)</label><input id="prefill-doc-id" placeholder="Google Doc / Sheet File ID"></div>
+              <div class="form-field">
+                <div style="display:flex;justify-content:space-between;align-items:center"><label for="prefill-variations">Teacher Variations &amp; Evaluation</label><button type="button" class="dictate-btn" id="dictate-variations">🎙 Dictate</button></div>
+                <textarea id="prefill-variations" placeholder="Teaching variations, technical adjustments, and outcome evaluation…"></textarea>
+              </div>
+              <div class="form-field">
+                <div style="display:flex;justify-content:space-between;align-items:center"><label for="prefill-feedback">Student Feedback Summary</label><button type="button" class="dictate-btn" id="dictate-feedback">🎙 Dictate</button></div>
+                <textarea id="prefill-feedback" placeholder="Summary of cohort strengths and areas for next assessment…"></textarea>
+              </div>
+              <button class="btn btn-dark" id="btn-save-prefill" type="button">Preview &amp; Save Entry →</button>
+            </div>
 
-        <section class="view" id="view-denied" hidden aria-labelledby="denied-title"><div style="max-width:590px;margin:7vh auto 0"><div class="card card-pad"><span class="tile-icon">⌁</span><div class="eyebrow" style="margin-top:24px">Access needed</div><h1 id="denied-title">A teacher account is required.</h1><p class="lead">Sign in with your approved school account. The owner must configure <code>LESSON_GRADER_ALLOWED_EMAILS</code> in the Apps Script project settings and deploy the app as the accessing user. No workbook or student data has been loaded.</p><button class="btn btn-dark" id="retry-auth" type="button">Try again</button></div></div></section>
+            <!-- Step 3: Work Samples Placement -->
+            <div class="card card-pad">
+              <div class="eyebrow">Step 3: Representative Work Samples</div>
+              <h3>Select HIGH, MED &amp; LOW Samples</h3>
+              <p class="muted tiny">Proposes representative student work based on score percentile or grade bands with teacher override.</p>
+              <div class="form-field"><label for="sample-policy">Selection Policy</label><select id="sample-policy"><option value="score_percentile">Score-Ranked (Top / Median / Lowest)</option><option value="grade_band">Grade Bands (A / C / E Representatives)</option></select></div>
+              <div id="sample-proposals-box" style="margin-bottom:14px"></div>
+              <div class="note" style="margin-bottom:14px">Saving copies the original student folios to the school's audit folders without altering originals.</div>
+              <button class="btn btn-lime" id="btn-save-samples" type="button">Preview &amp; Place Samples in Drive →</button>
+            </div>
+          </div>
+
+          <div class="card card-pad">
+            <div class="eyebrow">Audit Completion Dashboard</div>
+            <h3>Compliance &amp; Gaps Matrix</h3>
+            <p class="muted tiny">Tracks Registration doc completion, valid sample counts (0, 1, &gt;1), and flags misplaced files.</p>
+            <div id="audit-dashboard-matrix"></div>
+          </div>
+        </section>
+
+        <!-- 11. SETTINGS -->
+        <section class="view" id="view-settings" hidden aria-labelledby="settings-title">
+          <div class="header-row"><div><div class="eyebrow">Configuration &amp; Security</div><h1 id="settings-title">Settings</h1><p class="lead">Configure grade scale thresholds, deduction rules, feedback templates, and AI providers safely.</p></div><button class="btn btn-dark" id="save-all-settings" type="button">Save All Settings</button></div>
+          
+          <div class="grid-2">
+            <!-- Grade Bands Thresholds -->
+            <div class="card card-pad">
+              <div class="eyebrow">Grading Policy</div>
+              <h3>A–E Percentage Thresholds</h3>
+              <p class="muted tiny">Validates continuous coverage from 0% to 100% without gaps or overlaps.</p>
+              <div id="thresholds-editor-rows"></div>
+              <div id="thresholds-validation-msg" style="margin-top:8px"></div>
+              <div class="actions" style="margin-top:12px">
+                <button class="btn btn-sm" id="btn-preview-recalc" type="button">Preview Recalculation on Cohort</button>
+              </div>
+              <div id="thresholds-recalc-preview" style="margin-top:10px"></div>
+            </div>
+
+            <!-- Late Deduction Rules -->
+            <div class="card card-pad">
+              <div class="eyebrow">Assessment Rules</div>
+              <h3>Late Submission Deductions</h3>
+              <p class="muted tiny">Configurable deduction rules calculated strictly from raw scores.</p>
+              <div class="form-field"><label for="deduct-type">Rule Type</label><select id="deduct-type"><option value="none">No Penalty</option><option value="percent_per_day">Percentage per Late Day</option><option value="fixed_marks">Fixed Marks Deduction</option><option value="percent_of_achieved">Percentage of Achieved Mark</option></select></div>
+              <div class="form-grid">
+                <div class="form-field"><label for="deduct-rate">Rate (% or marks)</label><input id="deduct-rate" type="number" min="0" max="100" value="10"></div>
+                <div class="form-field"><label for="deduct-grace">Grace Hours</label><input id="deduct-grace" type="number" min="0" value="0"></div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:12px"><input type="checkbox" id="deduct-weekends" checked> Exclude Weekends from Late Days</label>
+            </div>
+
+            <!-- Feedback Template -->
+            <div class="card card-pad">
+              <div class="eyebrow">Feedback Generation</div>
+              <h3>Student Feedback Template</h3>
+              <p class="muted tiny">Tokens: {{student}}, {{task}}, {{grade}}, {{final_score}}, {{max_marks}}, {{what_went_well}}, {{areas_for_improvement}}, {{goals}}</p>
+              <div class="form-field"><textarea id="feedback-template-text" style="min-height:100px"></textarea></div>
+              <div class="actions" style="margin-bottom:10px"><button class="btn btn-sm" id="btn-preview-feedback" type="button">Preview with Sample Student</button></div>
+              <div id="feedback-template-preview" class="note" hidden></div>
+            </div>
+
+            <!-- AI Provider & Model Configuration -->
+            <div class="card card-pad">
+              <div class="eyebrow">AI Connection &amp; Security</div>
+              <h3>Gemini API Key</h3>
+              <p class="muted tiny">Stored server-side in Script Properties only. Never sent back to the browser.</p>
+              <div class="form-field"><label for="gemini-key">API Key</label><input id="gemini-key" type="password" placeholder="Paste Gemini key to save"></div>
+              <div class="form-grid">
+                <div class="form-field"><label for="gemini-model">Gemini Model</label><select id="gemini-model"><option value="gemini-2.5-flash">gemini-2.5-flash (Standard)</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fast)</option></select></div>
+                <div class="form-field"><label for="jev-code">JEV Subject Code</label><input id="jev-code" value="9JEV" placeholder="e.g. 9JEV"></div>
+              </div>
+              <div class="actions">
+                <button class="btn btn-dark" id="save-key" type="button">Save Key</button>
+                <button class="btn" id="test-key" type="button">Test AI Connection</button>
+              </div>
+              <p id="key-status" style="font-size:11px;font-weight:700;margin-top:10px"></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- CREATE WORKBOOK -->
+        <section class="view" id="view-create" hidden aria-labelledby="create-title">
+          <div class="header-row"><div><div class="eyebrow">New Project</div><h1 id="create-title">Create Grading Workbook</h1><p class="lead">Sets up a new workbook in your Google Drive library.</p></div></div>
+          <form class="card card-pad" id="create-form" style="max-width:700px">
+            <div class="form-grid three">
+              <div class="form-field"><label for="create-code">Course Code</label><input id="create-code" required placeholder="e.g. 7TECHI"></div>
+              <div class="form-field"><label for="create-task">Task Name</label><input id="create-task" required placeholder="e.g. Water Filtration"></div>
+              <div class="form-field"><label for="create-year">Year</label><input id="create-year" required type="number" value="2026"></div>
+            </div>
+            <div class="form-field"><label for="create-rubric">Shared Rubric Source (optional)</label><select id="create-rubric"><option value="">Select later</option></select></div>
+            <button class="btn btn-dark" type="submit">Create Workbook →</button>
+          </form>
+        </section>
+
+        <!-- ACCESS DENIED -->
+        <section class="view" id="view-denied" hidden aria-labelledby="denied-title">
+          <div class="card card-pad" style="max-width:540px;margin:10vh auto;text-align:center">
+            <div style="font-size:36px;margin-bottom:12px">🔒</div>
+            <h1 id="denied-title" style="font-size:24px">Teacher Access Required</h1>
+            <p class="muted">Sign in with an approved school teacher account. The owner must add your email to <code>LESSON_GRADER_ALLOWED_EMAILS</code>.</p>
+            <button class="btn btn-dark" id="retry-auth" type="button">Retry</button>
+          </div>
+        </section>
       </main>
     </div>
   </div>
-  <nav class="mobile-nav" aria-label="Mobile navigation"><button type="button" class="nav-link active" data-nav="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button><button type="button" class="nav-link" data-nav="workbooks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span>Workbooks</span></button><button type="button" class="nav-link" data-nav="rubrics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4z"/></svg><span>Rubrics</span></button><button type="button" class="nav-link" data-nav="classroom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/></svg><span>Classroom</span></button><button type="button" class="nav-link" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg><span>Settings</span></button></nav>
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-close" aria-label="Dismiss notification">×</button></div>
+
+  <nav class="mobile-nav" aria-label="Mobile Navigation">
+    <button type="button" class="nav-link active" data-nav="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button>
+    <button type="button" class="nav-link" data-nav="workbooks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span>Workbooks</span></button>
+    <button type="button" class="nav-link" data-nav="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18"/></svg><span>Table</span></button>
+    <button type="button" class="nav-link" data-nav="rubrics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4z"/></svg><span>Rubrics</span></button>
+    <button type="button" class="nav-link" data-nav="audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 14l2 2 4-4"/></svg><span>Audit</span></button>
+    <button type="button" class="nav-link" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg><span>Settings</span></button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-text"></span>
+    <button type="button" id="toast-close" aria-label="Close notification">×</button>
+  </div>
+
   <script>
   (function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
     var escape = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); };
-    var state = { view: 'overview', authorised: false, keyConfigured: false, workbooks: [], rubrics: [], workbookId: '', taskName: '', dashboard: null, grade: null, dirty: false, busy: 0, search: '', filter: 'current', editor: { sourceId: '', criteria: [], mappings: {} } };
+    var state = {
+      view: 'overview',
+      prevView: 'overview',
+      authorised: false,
+      keyConfigured: false,
+      workbooks: [],
+      rubrics: [],
+      workbookId: '',
+      taskName: '',
+      dashboard: null,
+      grade: null,
+      dirty: false,
+      busy: 0,
+      search: '',
+      filter: 'current',
+      editor: { sourceId: '', criteria: [], mappings: {} },
+      settings: null,
+      selectedStudents: {},
+      speechRecognition: null
+    };
     var toastTimeout;
 
     function notify(message, error) {
@@ -366,10 +644,11 @@
       $('toast').setAttribute('role', error ? 'alert' : 'status');
       $('toast').hidden = false;
       clearTimeout(toastTimeout);
-      if (!error) toastTimeout = setTimeout(function () { $('toast').hidden = true; }, 6500);
+      if (!error) toastTimeout = setTimeout(function () { $('toast').hidden = true; }, 6000);
     }
     $('toast-close').addEventListener('click', function () { $('toast').hidden = true; });
-    function fail(err) { notify(err && err.message || 'Something went wrong. Please try again.', true); }
+    function fail(err) { notify(err && err.message || 'Something went wrong.', true); }
+
     function call(name, args) {
       return new Promise(function (resolve, reject) {
         try {
@@ -379,63 +658,95 @@
         } catch (e) { reject(e); }
       });
     }
-    function unwrap(res) { if (!res || res.success === false) throw new Error(res && res.message || 'Request failed.'); return res.data !== undefined ? res.data : res; }
+
+    function unwrap(res) {
+      if (!res || res.success === false) throw new Error(res && res.message || 'Request failed.');
+      return res.data !== undefined ? res.data : res;
+    }
+
     async function request(name, args) {
       state.busy++; $('busy-bar').hidden = false;
       try { return unwrap(await call(name, args)); }
       finally { state.busy--; if (!state.busy) $('busy-bar').hidden = true; }
     }
-    function changed() { return state.dirty ? window.confirm('You have unsaved assessment changes. Leave without saving?') : true; }
-    window.addEventListener('beforeunload', function (e) { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
-    function labelFromEmail(email) { var v = String(email || '').split('@')[0]; return v ? v.slice(0, 25) : 'Teacher'; }
-    function initials(name) { return String(name || '?').trim().split(/\s+/).slice(0, 2).map(function (s) { return s[0] || ''; }).join('').toUpperCase(); }
-    function selectedWorkbook() { return state.workbooks.find(function (w) { return w.id === state.workbookId; }); }
-    function genericEmpty(title, text, button) { return '<div class="empty"><span class="tile-icon">✳</span><strong>' + escape(title) + '</strong><span>' + escape(text) + '</span>' + (button || '') + '</div>'; }
+
+    function changed() {
+      return state.dirty ? window.confirm('You have unsaved changes. Leave without saving?') : true;
+    }
+
     function setView(view, title) {
+      state.prevView = state.view;
       state.view = view;
       document.querySelectorAll('.view').forEach(function (el) { el.hidden = el.id !== 'view-' + view; });
       document.querySelectorAll('[data-nav]').forEach(function (el) {
         var nav = ['task','workbook','grading','create'].indexOf(view) !== -1 ? 'workbooks' : view === 'rubric-editor' ? 'rubrics' : view;
         el.classList.toggle('active', el.getAttribute('data-nav') === nav);
-        if (el.classList.contains('nav-link')) el.setAttribute('aria-current', el.getAttribute('data-nav') === nav ? 'page' : 'false');
       });
-      $('breadcrumb').innerHTML = '<span>Workspace</span><span class="crumb-sep">/</span><strong>' + escape(title || view.replace(/-/g,' ')) + '</strong>';
+      $('breadcrumb').innerHTML = '<span>Teacher\'s Studio</span><span class="crumb-sep">/</span><strong>' + escape(title || view) + '</strong>';
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
+
     function navigate(view) {
       if (state.view === 'grading' && view !== 'grading' && !changed()) return;
       state.dirty = false;
-      setView(view, {overview:'Overview',workbooks:'Workbooks',rubrics:'Rubric library',classroom:'Classroom',settings:'Settings',create:'New workbook'}[view] || view);
+      var titleMap = {
+        overview: 'Overview', workbooks: 'Workbooks', table: 'Class Table',
+        rubrics: 'Rubric Library', classroom: 'Classroom', audit: 'Registration & Samples',
+        settings: 'Settings', create: 'New Workbook'
+      };
+      setView(view, titleMap[view] || view);
       if (view === 'rubrics') refreshRubrics();
       if (view === 'classroom') loadClassroom();
-      if (view === 'settings') renderSettings();
+      if (view === 'settings') loadSettings();
+      if (view === 'table') loadClassTable();
+      if (view === 'audit') loadAuditStudio();
     }
+
     document.addEventListener('click', function (e) {
       var el = e.target.closest('[data-nav]');
-      if (!el) return;
-      e.preventDefault(); navigate(el.getAttribute('data-nav'));
+      if (el) { e.preventDefault(); navigate(el.getAttribute('data-nav')); }
     });
+
+    $('top-back-btn').addEventListener('click', function () {
+      if (!changed()) return;
+      if (state.view === 'grading') { openTask(state.taskName); }
+      else if (state.view === 'task') { openWorkbook(state.workbookId); }
+      else if (state.view === 'workbook') { navigate('workbooks'); }
+      else if (state.view === 'rubric-editor') { navigate('rubrics'); }
+      else { navigate(state.prevView || 'overview'); }
+    });
+
+    var backToWb = $('back-to-workbook');
+    if (backToWb) backToWb.addEventListener('click', function () { openWorkbook(state.workbookId); });
+    var backToTsk = $('back-to-task');
+    if (backToTsk) backToTsk.addEventListener('click', function () { openTask(state.taskName); });
 
     function fillSelect(id, items, placeholder, selected, pickLabel) {
       var el = $(id);
+      if (!el) return;
       el.replaceChildren();
       var empty = new Option(placeholder, ''); el.appendChild(empty);
-      (items || []).forEach(function (entry) { el.appendChild(new Option(pickLabel ? pickLabel(entry) : entry.name, entry.id)); });
+      (items || []).forEach(function (entry) { el.appendChild(new Option(pickLabel ? pickLabel(entry) : (entry.name || entry.title), entry.id || entry.value)); });
       if (selected) el.value = selected;
     }
+
     function workbookCard(w) {
       return '<button type="button" class="workbook-card" data-workbook="' + escape(w.id) + '"><div class="tile-top"><span class="tile-icon">▤</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(w.name) + '</span><span class="tile-meta">Google Sheets · Grading workspace</span></button>';
     }
+
     function renderWorkbooks() {
-      var html = state.workbooks.length ? state.workbooks.map(workbookCard).join('') : genericEmpty('Nothing here yet', 'Your Drive grading workbooks will appear here.', '<button class="btn btn-sm btn-dark" data-nav="create" type="button" style="margin-top:16px">Create a workbook</button>');
-      $('workbook-list').innerHTML = html; $('overview-list').innerHTML = state.workbooks.slice(0,3).map(workbookCard).join('') || html;
+      var html = state.workbooks.length ? state.workbooks.map(workbookCard).join('') : '<div class="empty">No workbooks found.</div>';
+      $('workbook-list').innerHTML = html;
+      $('overview-list').innerHTML = state.workbooks.slice(0, 3).map(workbookCard).join('') || html;
       $('overview-workbooks').textContent = state.workbooks.length;
       ['editor-workbook','class-workbook'].forEach(function (id) { fillSelect(id, state.workbooks, 'Select workbook', state.workbookId); });
     }
+
     async function refreshWorkbooks() {
       try { state.workbooks = await request('apiWebListCandidateWorkbooks'); renderWorkbooks(); }
       catch (err) { fail(err); }
     }
+
     document.addEventListener('click', function (e) {
       var el = e.target.closest('[data-workbook]');
       if (el) openWorkbook(el.getAttribute('data-workbook'));
@@ -444,441 +755,604 @@
       var student = e.target.closest('[data-student]');
       if (student) openStudent(student.getAttribute('data-student'));
     });
+
     async function openWorkbook(id) {
-      if (state.view === 'grading' && !changed()) return;
+      if (!changed()) return;
       state.dirty = false;
       state.workbookId = id; state.taskName = '';
-      var w = selectedWorkbook();
-      $('workbook-title').textContent = w ? w.name : 'Grading workbook';
-      setView('workbook', w ? w.name : 'Workbook');
-      $('task-list').innerHTML = genericEmpty('Loading tasks', 'Checking workbook tabs…');
+      var wb = state.workbooks.find(function (w) { return w.id === id; });
+      $('workbook-title').textContent = wb ? wb.name : 'Choose a task';
+      setView('workbook', 'Tasks');
       try {
         var tasks = await request('apiWebListWorkbookTasks', [id]);
-        state.workbookTasks = tasks;
-        $('task-list').innerHTML = tasks.length ? tasks.map(function (t) { return '<button class="workbook-card" type="button" data-task="' + escape(t) + '"><div class="tile-top"><span class="tile-icon sky">◇</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(t) + '</span><span class="tile-meta">Open student roster & rubric</span></button>'; }).join('') : genericEmpty('No task tabs found','Create a new workbook or check your Sheets tabs.');
-        fillSelect('editor-task', tasks.map(function(t){return {id:t,name:t};}), 'Select task', state.taskName);
-        fillSelect('class-task', tasks.map(function(t){return {id:t,name:t};}), 'Select task', state.taskName);
+        $('task-list').innerHTML = tasks.length ? tasks.map(function (t) {
+          return '<button class="workbook-card" type="button" data-task="' + escape(t) + '"><div class="tile-top"><span class="tile-icon sky">◇</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(t) + '</span><span class="tile-meta">Open student roster & rubric</span></button>';
+        }).join('') : '<div class="empty">No task sheets found in this workbook.</div>';
       } catch (err) { fail(err); }
     }
-    async function openTask(name) {
-      if (state.view === 'grading' && !changed()) return;
-      state.dirty = false; state.taskName = name; state.filter = 'current'; state.search = '';
+
+    async function openTask(task) {
+      if (!changed()) return;
+      state.dirty = false;
+      state.taskName = task;
+      setView('task', task);
+      $('task-title').textContent = task;
+      var wb = state.workbooks.find(function (w) { return w.id === state.workbookId; });
+      $('task-workbook-name').textContent = wb ? wb.name : '';
+      try {
+        state.dashboard = await request('apiWebTaskDashboard', [state.workbookId, task]);
+        renderTaskDashboard();
+      } catch (err) { fail(err); }
+    }
+
+    function renderTaskDashboard() {
+      var d = state.dashboard;
+      if (!d) return;
+      $('stat-total').textContent = d.stats.total;
+      $('stat-awaiting').textContent = d.stats.awaiting;
+      $('stat-approved').textContent = d.stats.approved;
+
+      var subs = d.submissions || [];
+      var html = '<div class="table-container"><table class="data-table"><thead><tr><th><input type="checkbox" id="table-select-all"></th><th>Student</th><th>Class</th><th>Version</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead><tbody>';
+      for (var i = 0; i < subs.length; i++) {
+        var s = subs[i];
+        var isChecked = state.selectedStudents[s.submissionRecordId] ? 'checked' : '';
+        html += '<tr><td><input type="checkbox" class="student-select" data-sub-id="' + escape(s.submissionRecordId) + '" ' + isChecked + '></td>' +
+          '<td><strong>' + escape(s.studentName) + '</strong><br><span class="tiny muted">' + escape(s.studentEmail) + '</span></td>' +
+          '<td>' + escape(s.className || '—') + '</td>' +
+          '<td>v' + escape(s.version) + '</td>' +
+          '<td><span class="pill ' + (s.status === 'Approved' ? 'green' : s.status === 'InReview' ? 'yellow' : 'gray') + '">' + escape(s.status) + '</span></td>' +
+          '<td>' + escape(String(s.updatedAt || '').slice(0, 10)) + '</td>' +
+          '<td><button class="btn btn-sm btn-dark" type="button" data-student="' + escape(s.submissionRecordId) + '">Grade →</button></td></tr>';
+      }
+      html += '</tbody></table></div>';
+      $('student-list').innerHTML = html;
+
+      var selectAll = $('table-select-all');
+      if (selectAll) {
+        selectAll.addEventListener('change', function () {
+          var checked = selectAll.checked;
+          document.querySelectorAll('.student-select').forEach(function (cb) {
+            cb.checked = checked;
+            var id = cb.getAttribute('data-sub-id');
+            if (checked) state.selectedStudents[id] = true; else delete state.selectedStudents[id];
+          });
+        });
+      }
+    }
+
+    // Task Add Student Form Toggle
+    $('task-add-student').addEventListener('click', function () {
+      var form = $('manual-student-form');
+      form.hidden = !form.hidden;
+      if (!form.hidden) $('manual-name').focus();
+    });
+    $('cancel-manual').addEventListener('click', function () {
       $('manual-student-form').hidden = true;
-      $('student-search').value = '';
-      document.querySelectorAll('.filter').forEach(function (b) { b.classList.toggle('active', b.dataset.filter === 'current'); });
-      $('task-title').textContent = name; $('task-workbook-name').textContent = selectedWorkbook() && selectedWorkbook().name || '';
-      setView('task', name);
-      $('student-list').innerHTML = genericEmpty('Loading submissions','Reading the workbook…');
-      try { state.dashboard = await request('apiWebTaskDashboard', [state.workbookId, name]); renderDashboard(); }
-      catch (err) { fail(err); $('student-list').innerHTML = genericEmpty('Could not load task',err.message); }
-    }
-    function statusPill(s) {
-      var status = String(s || 'New');
-      var cls = ({'Approved':'approved','Locked':'locked','InReview':'inreview','New':'new','Superseded':'historical'})[status] || 'new';
-      return '<span class="pill ' + cls + '">' + escape(status) + '</span>';
-    }
-    function renderDashboard() {
-      var d = state.dashboard; if (!d) return;
-      $('stat-total').textContent = d.stats.total; $('stat-approved').textContent = d.stats.approved; $('stat-awaiting').textContent = d.stats.awaiting;
-      $('task-profile-banner').innerHTML = d.profile ? '<div><div class="eyebrow">Active rubric · version ' + d.profileVersions + '</div><strong>' + escape(d.profile.name) + '</strong><small>' + d.profile.criteriaCount + ' criteria · ' + d.profile.totalMaxMarks + ' marks · ' + d.profile.observableCount + ' observables</small></div><span class="badge">✓ Reviewed & active</span>' : '<div><div class="eyebrow">Rubric required</div><strong>Give this project its own rubric.</strong><small>Every criterion and mark is reviewed by you before grading begins.</small></div><span class="badge">Action needed</span>';
-      $('task-notice').innerHTML = !d.prepared ? '<div class="note warn" style="margin-bottom:15px"><strong>Enable web grading to continue.</strong> This creates a Drive backup, then adds the required grading tables without changing existing marks. <button type="button" class="btn btn-sm" id="enable-grading" style="margin:8px 0 0">Create backup & enable →</button></div>' : '';
-      $('task-import').disabled = !d.prepared;
-      $('task-add-student').disabled = !d.prepared;
-      renderStudents();
-    }
-    function renderStudents() {
-      var all = state.dashboard && state.dashboard.submissions || [];
-      var query = state.search.toLowerCase();
-      var filtered = all.filter(function (s) {
-        if (state.filter === 'current' && !s.currentOfficial) return false;
-        if (state.filter === 'review' && (!s.currentOfficial || s.status === 'Approved' || s.status === 'Locked')) return false;
-        return !query || String(s.studentName).toLowerCase().includes(query) || String(s.studentEmail).toLowerCase().includes(query);
-      });
-      $('student-list').innerHTML = filtered.length ? '<div class="table-wrap"><table><thead><tr><th>Student</th><th>Version</th><th>Status</th><th>Open</th></tr></thead><tbody>' + filtered.map(function (s) {
-        return '<tr><td><div class="student-cell"><span class="student-avatar">' + escape(initials(s.studentName)) + '</span><span><span class="student-name">' + escape(s.studentName) + '</span><span class="student-email">' + escape(s.studentEmail) + '</span></span></div></td><td class="muted">v' + escape(s.version) + (s.currentOfficial ? '' : ' · historical') + '</td><td>' + statusPill(s.status) + '</td><td><button class="btn btn-sm" type="button" data-student="' + escape(s.submissionRecordId) + '">Review →</button></td></tr>';
-      }).join('') + '</tbody></table></div>' : genericEmpty(all.length ? 'No matching students' : 'No submissions yet', all.length ? 'Try a different search or filter.' : 'Import from a linked Classroom assignment, or add a student manually.');
-    }
-    $('student-search').addEventListener('input', function (e) { state.search = e.target.value.trim(); renderStudents(); });
-    document.querySelectorAll('.filter').forEach(function (btn) { btn.addEventListener('click', function () { state.filter = btn.dataset.filter; document.querySelectorAll('.filter').forEach(function (b) { b.classList.toggle('active', b === btn); }); renderStudents(); }); });
-    $('back-to-workbook').addEventListener('click', function () { openWorkbook(state.workbookId); });
-    $('task-add-rubric').addEventListener('click', function () { startEditor(); });
-    $('task-add-student').addEventListener('click', function () { $('manual-student-form').hidden = false; $('manual-name').focus(); });
-    $('cancel-manual').addEventListener('click', function () { $('manual-student-form').hidden = true; });
+    });
     $('manual-student-form').addEventListener('submit', async function (e) {
       e.preventDefault();
+      var name = $('manual-name').value;
+      var email = $('manual-email').value;
       try {
-        var r = await request('apiWebAddManualSubmission', [state.workbookId,state.taskName,
-          $('manual-name').value.trim(),$('manual-email').value.trim(),$('manual-class').value.trim()]);
-        notify(r.message); $('manual-student-form').reset(); $('manual-student-form').hidden = true;
-        await openTask(state.taskName); await openStudent(r.submissionRecordId);
+        var res = await request('apiWebAddManualSubmission', [state.workbookId, state.taskName, name, email]);
+        notify(res.message);
+        $('manual-student-form').hidden = true;
+        $('manual-name').value = '';
+        $('manual-email').value = '';
+        if (res.submissionRecordId) openStudent(res.submissionRecordId);
+        else openTask(state.taskName);
       } catch (err) { fail(err); }
     });
-    $('task-notice').addEventListener('click', async function (e) {
-      if (!e.target.closest('#enable-grading')) return;
-      if (!window.confirm('Create a Drive backup and add web-grading columns to this workbook? Existing grades and rows will not be replaced.')) return;
-      try { var r = await request('apiWebEnableGrading', [state.workbookId]); notify(r.message + (r.backupId ? ' Backup ID: ' + r.backupId : '')); openTask(state.taskName); }
-      catch (err) { fail(err); }
+
+    // Bulk AI Grading
+    $('task-bulk-ai').addEventListener('click', async function () {
+      var ids = Object.keys(state.selectedStudents);
+      if (!ids.length) { notify('Select at least one student submission using the checkboxes.', true); return; }
+      if (!window.confirm('Run AI grading proposal on ' + ids.length + ' selected student(s)? Proposals are saved as drafts and require your review.')) return;
+      try {
+        var res = await request('apiWebBulkGradeQueue', [state.workbookId, state.taskName, ids]);
+        notify(res.message);
+        openTask(state.taskName);
+      } catch (err) { fail(err); }
     });
-    $('task-import').addEventListener('click', async function () {
-      if (!window.confirm('Import this task’s linked Classroom submissions? Changed student work will create a new version; existing approved grades are never overwritten.')) return;
-      try { var r = await request('apiWebImportTask', [state.workbookId,state.taskName]); notify(r.message); openTask(state.taskName); }
-      catch (err) { fail(err); }
+
+    // Incomplete submissions flagger
+    $('btn-flag-incomplete').addEventListener('click', async function () {
+      try {
+        var flags = await request('apiWebFlagIncompleteSubmissions', [state.workbookId, state.taskName]);
+        var list = flags.flags.notSubmitted.concat(flags.flags.unreadable);
+        if (!list.length) { notify('All submissions have readable files attached.'); return; }
+        var drafts = await request('apiWebDraftClassroomMessages', [state.workbookId, state.taskName, list, 'Please check and resubmit your files.']);
+        setView('classroom', 'Classroom Messages');
+        $('incomplete-messaging-card').hidden = false;
+        $('classroom-messages-list').innerHTML = drafts.drafts.map(function (m) {
+          return '<div class="card card-pad" style="margin-bottom:10px"><strong>' + escape(m.studentName) + '</strong> (' + escape(m.reason) + ')<div class="note" style="margin-top:6px;white-space:pre-wrap">' + escape(m.message) + '</div></div>';
+        }).join('');
+      } catch (err) { fail(err); }
     });
 
     async function openStudent(id) {
-      if (state.view === 'grading' && !changed()) return;
+      if (!changed()) return;
       state.dirty = false;
-      setView('grading', 'Assessment studio');
-      $('student-title').textContent = 'Loading assessment…';
-      try { state.grade = await request('apiWebGradeDetail', [state.workbookId,state.taskName,id]); renderGrade(); }
-      catch (err) { fail(err); navigate('task'); }
+      setView('grading', 'Assessment Studio');
+      try {
+        state.grade = await request('apiWebGradeDetail', [state.workbookId, state.taskName, id]);
+        renderGradeStudio();
+      } catch (err) { fail(err); }
     }
-    function currentCriteria() {
+
+    function renderGradeStudio() {
+      var d = state.grade;
+      if (!d) return;
+      var sub = d.submission;
+      $('student-title').textContent = sub.studentName;
+      $('student-meta').textContent = (sub.className || '') + ' · v' + sub.version + (sub.late ? ' (Late)' : '');
+      $('student-status').textContent = sub.status;
+      $('student-status').className = 'pill ' + (sub.status === 'Approved' ? 'green' : 'yellow');
+
+      // Buttons active/disabled states
+      var isApproved = sub.status === 'Approved';
+      var hasAssessment = !!d.assessmentId;
+      $('save-draft').disabled = isApproved;
+      $('approve-grade').disabled = isApproved || !hasAssessment;
+      $('lock-grade').hidden = !isApproved;
+      $('save-state').textContent = isApproved ? 'Approved snapshot' : hasAssessment ? 'Draft saved' : 'Ready to review';
+
+      // Evidence files
+      $('doc-file-count').textContent = (d.attachments || []).length + ' files';
+      $('evidence-files').innerHTML = (d.attachments || []).length ? d.attachments.map(function (f) {
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">' +
+          '<span>📄 ' + escape(f.fileName) + '</span>' +
+          (f.link ? '<a href="' + escape(f.link) + '" target="_blank" class="btn btn-sm">Open ↗</a>' : '') +
+          '</div>';
+      }).join('') : '<div class="tiny muted">No attached Drive files.</div>';
+
+      // Deep link anchors
+      var anchors = ['Page 1', 'Page 2', 'Page 3', 'Folio Section A', 'Iterative Test 1'];
+      $('deep-link-anchors').innerHTML = anchors.map(function (a) {
+        return '<span class="evidence-anchor">' + escape(a) + '</span> ';
+      }).join('');
+
+      // History
+      $('grade-history').innerHTML = (d.history || []).map(function (h) {
+        return '<div class="tiny" style="padding:4px 0;border-bottom:1px solid #edf1eb"><strong>' + escape(h.action) + '</strong> · ' + escape(String(h.when || '').slice(0, 10)) + '<br><span class="muted">' + escape(h.notes || '') + '</span></div>';
+      }).join('') || '<div class="tiny muted">No prior history.</div>';
+
+      // Criteria Stack
+      var criteria = d.profile ? d.profile.criteria : [];
+      var cMap = d.criteriaMap || {};
+      var stackHtml = '';
+      for (var i = 0; i < criteria.length; i++) {
+        var c = criteria[i];
+        var stateCrit = cMap[c.criterionId] || { checkboxes: {} };
+        stackHtml += '<div class="criterion-card" data-cid="' + escape(c.criterionId) + '">' +
+          '<div class="criterion-head"><div><span class="eyebrow">' + escape(c.part || 'Criterion') + ' · ' + c.maxMarks + ' Marks' + (c.outcome ? ' · ' + c.outcome : '') + '</span><h3>' + escape(c.title) + '</h3></div></div>';
+        
+        for (var b = 0; b < c.bandOrder.length; b++) {
+          var bandKey = c.bandOrder[b];
+          var obs = c.bands[bandKey] || [];
+          stackHtml += '<div style="margin-top:8px"><span class="tiny muted" style="font-weight:800">Band ' + escape(bandKey) + '</span>';
+          for (var o = 0; o < obs.length; o++) {
+            var item = obs[o];
+            var isTicked = stateCrit.checkboxes && stateCrit.checkboxes[item.id] ? 'checked' : '';
+            stackHtml += '<div class="observable-row"><input type="checkbox" class="obs-check" data-check="' + escape(item.id) + '" data-obs-id="' + escape(item.id) + '" ' + isTicked + '><span class="observable-text">' + escape(item.text) + '</span><span class="observable-share">' + (c.maxMarks / Math.max(1, obs.length)).toFixed(1) + 'm</span></div>';
+          }
+          stackHtml += '</div>';
+        }
+
+        // Distinct override
+        if (c.mdOverride && c.mdOverride.id) {
+          var isMdTicked = stateCrit.checkboxes && stateCrit.checkboxes[c.mdOverride.id] ? 'checked' : '';
+          stackHtml += '<div class="observable-row" style="background:#fef9ee;border-color:#fde68a;margin-top:8px"><input type="checkbox" class="obs-check" data-check="' + escape(c.mdOverride.id) + '" data-obs-id="' + escape(c.mdOverride.id) + '" ' + isMdTicked + '><span class="observable-text" style="font-weight:700">Distinct Override: ' + escape(c.mdOverride.text) + '</span></div>';
+        }
+
+        // Teacher written note
+        stackHtml += '<div class="form-field" style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><label>Teacher Observations</label><button type="button" class="dictate-btn" data-dictate-target="' + escape(c.criterionId) + '">🎙 Dictate</button></div><textarea class="crit-note" data-crit-note="' + escape(c.criterionId) + '" placeholder="Specific observable evidence…">' + escape(stateCrit.teacherWrittenNote || '') + '</textarea></div>';
+        stackHtml += '</div>';
+      }
+      $('criterion-list').innerHTML = stackHtml;
+
+      // Feedback
+      var fb = d.feedback || {};
+      $('feedback-well').value = fb.whatWentWell || '';
+      $('feedback-next').value = fb.areasForImprovement || '';
+      $('feedback-goals').value = fb.goalsForNextAssessment || '';
+
+      updateLiveScore();
+    }
+
+    function collectCurrentCriteria() {
       var d = state.grade;
       if (!d || !d.profile) return {};
-      d.profile.criteria.forEach(function (c) { if (!d.criteriaMap[c.criterionId]) d.criteriaMap[c.criterionId] = { checkboxes:{}, teacherWrittenNote:'', aiEvidence:[], teacherAdjusted:false }; });
-      return d.criteriaMap;
-    }
-    function gradeLetter(percent, bands) { for (var i=0;i<bands.length;i++) if (percent >= bands[i].min) return bands[i].letter; return bands.length ? bands[bands.length-1].letter : 'E'; }
-    function localScore() {
-      var d = state.grade, profile = d && d.profile; if (!profile) return null;
-      var bands = profile.gradeScaleBands || [{letter:'A',min:85},{letter:'B',min:75},{letter:'C',min:65},{letter:'D',min:50},{letter:'E',min:0}];
-      var total = 0, max = 0, checked = 0, per = {};
-      profile.criteria.forEach(function (c) {
-        var checks = d.criteriaMap[c.criterionId].checkboxes || {}, points = 0, ticks = 0;
-        if (checks[c.mdOverride.id]) { points = c.maxMarks; ticks++; }
-        else (c.bandOrder || []).forEach(function (b) {
-          var items = c.bands[b] || [], n = items.filter(function(o){return checks[o.id] === true;}).length;
-          ticks += n; if (items.length) points += n * c.maxMarks * c.bandWeights[b] / items.length;
-        });
-        points = Math.min(c.maxMarks,points); checked += ticks > 0 ? 1 : 0; total += points; max += c.maxMarks;
-        per[c.criterionId] = {grade:gradeLetter(c.maxMarks ? points*100/c.maxMarks : 0,bands), points:points, ticks:ticks};
-      });
-      return {total:total, max:max, percent:max ? total*100/max : 0, letter:gradeLetter(max ? total*100/max : 0,bands), checked:checked, per:per};
-    }
-    function safeDriveLink(link) {
-      try { var url = new URL(link); return url.protocol === 'https:' && (url.hostname === 'google.com' || url.hostname.endsWith('.google.com')) ? url.href : ''; }
-      catch(e){return '';}
-    }
-    function renderGrade() {
-      var d = state.grade; if (!d) return;
-      var s = d.submission, profile = d.profile, editable = !!profile && !d.readOnly;
-      $('student-title').textContent = s.studentName || 'Student';
-      $('grading-eyebrow').textContent = state.taskName + ' · v' + s.version;
-      $('student-meta').textContent = [s.className, s.studentEmail, s.currentOfficial ? 'Current submission' : 'Historical version'].filter(Boolean).join(' · ');
-      $('student-status').outerHTML = statusPill(s.status).replace('<span ', '<span id="student-status" ');
-      $('grading-warning').innerHTML = d.warning ? '<div class="note warn" style="margin-bottom:15px">' + escape(d.warning) + '</div>' : (!editable ? '<div class="note" style="margin-bottom:15px">This assessment is read-only. Its rubric, grade and history have been preserved.</div>' : '');
-      $('download-report').disabled = s.status !== 'Approved' && s.status !== 'Locked' || d.legacy || !profile;
-      $('lock-grade').hidden = s.status !== 'Approved' || !s.currentOfficial || d.legacy;
-      $('run-ai').disabled = !editable;
-      $('save-draft').disabled = !editable;
-      $('approve-grade').disabled = !editable || !d.assessmentId;
-      $('new-reassessment').hidden = (s.status !== 'Approved' && s.status !== 'Locked') || !s.currentOfficial || d.legacy;
-      ['feedback-well','feedback-next','feedback-goals'].forEach(function (id) { $(id).disabled = !editable; });
-      $('feedback-well').value = d.feedback.whatWentWell || '';
-      $('feedback-next').value = d.feedback.areasForImprovement || '';
-      $('feedback-goals').value = d.feedback.goalsForNextAssessment || '';
-      currentCriteria();
-      $('criterion-list').innerHTML = !profile ? genericEmpty('A rubric belongs here', 'Add a reviewed rubric to this task to begin grading.') : profile.criteria.map(function (c, i) {
-        var st = d.criteriaMap[c.criterionId], checks = st.checkboxes || {};
-        var bandsHtml = (c.bandOrder || []).map(function (b) {
-          return '<div class="band"><div class="band-head">Band ' + escape(b) + ' · ' + ((c.bandWeights[b] || 0)*100).toFixed(1) + '% weighting</div>' + (c.bands[b] || []).map(function (o) {
-            return '<label class="obs"><input type="checkbox" data-check="' + escape(o.id) + '" data-cid="' + escape(c.criterionId) + '" ' + (checks[o.id] ? 'checked ' : '') + (editable ? '' : 'disabled ') + '><span><em>' + escape(o.id) + '</em>' + escape(o.text) + '</span></label>';
-          }).join('') + '</div>';
-        }).join('');
-        var aiHtml = st.aiProposedGrade ? '<div class="note" style="margin-bottom:16px"><strong>✳ Gemini draft · ' + escape(st.aiProposedGrade) + '</strong><p class="tiny" style="margin:5px 0 0">AI suggestions are evidence hints, not a teacher grade. Verify every tick.</p>' + (st.aiEvidence || []).slice(0,8).map(function (ev) { return '<p class="tiny" style="margin:7px 0 0"><strong>' + escape(ev.checkboxId) + '</strong> · ' + escape(ev.note) + (ev.fileName ? ' — ' + escape(ev.fileName) : '') + '</p>'; }).join('') + '</div>' : '';
-        return '<details class="criterion-card" ' + (i === 0 ? 'open' : '') + '><summary><span class="criterion-no">' + escape(c.criterionId) + '</span><span class="criterion-meta"><strong>' + escape(c.title) + '</strong><small>' + escape(c.part || 'Overall') + ' · ' + escape(c.maxMarks) + ' marks' + (c.outcome ? ' · '+escape(c.outcome) : '') + '</small></span><span class="criterion-result" id="crit-result-' + escape(c.criterionId) + '">—</span><span class="chevron" aria-hidden="true">⌄</span></summary><div class="criterion-body"><div class="md-override"><label class="obs"><input type="checkbox" data-check="' + escape(c.mdOverride.id) + '" data-cid="' + escape(c.criterionId) + '" ' + (checks[c.mdOverride.id] ? 'checked ' : '') + (editable ? '' : 'disabled ') + '><span><strong>Distinct evidence override</strong><br>' + escape(c.mdOverride.text) + '</span></label></div>' + bandsHtml + aiHtml + '<div class="form-field"><div class="note-label"><label for="note-' + escape(c.criterionId) + '">Teacher observation</label><button type="button" class="btn btn-sm btn-ghost" data-dictate="' + escape(c.criterionId) + '" ' + (editable ? '' : 'disabled ') + ' title="Dictate note (if supported by browser)">◉ Dictate</button></div><textarea id="note-' + escape(c.criterionId) + '" data-note="' + escape(c.criterionId) + '" placeholder="What evidence supports this judgment?" ' + (editable ? '' : 'disabled ') + '>' + escape(st.teacherWrittenNote || '') + '</textarea></div><div class="score-footer"><span id="crit-marks-' + escape(c.criterionId) + '">—</span><span>' + (editable ? 'Teacher decision required' : 'Teacher approved / archived') + '</span></div></div></details>';
-      }).join('');
-      $('evidence-files').innerHTML = d.attachments.length ? d.attachments.map(function (f) { var url = safeDriveLink(f.link);
-        return (url ? '<a class="file-link" href="' + escape(url) + '" target="_blank" rel="noopener noreferrer">' : '<div class="file-link">') + '<span class="file-icon">↗</span><span><strong>' + escape(f.fileName || 'Drive file') + '</strong><small>' + escape(f.mimeType || f.limitations || 'File') + '</small></span>' + (url ? '</a>' : '</div>');
-      }).join('') : '<p class="muted tiny">No Drive attachments for this submission. Assess manually if there is other evidence.</p>';
-      $('grade-history').innerHTML = d.history.length ? d.history.slice().reverse().slice(0,12).map(function (h) { return '<div class="history-entry"><strong>' + escape(h.action) + '</strong><small>' + escape(h.when) + ' · ' + escape(labelFromEmail(h.by)) + '</small></div>'; }).join('') : '<p class="muted tiny">No assessment events yet.</p>';
-      updateLiveScore(); $('save-state').textContent = editable ? 'Ready to review' : 'Assessment preserved';
-    }
-    function updateLiveScore() {
-      var d = state.grade, r = localScore();
-      if (!r) { $('live-score').textContent = '—'; $('live-score-outof').textContent = ' / no rubric'; $('live-grade').textContent = 'Not assessed'; $('review-progress').textContent = 'Add a rubric to start'; return; }
-      $('live-score').textContent = r.total.toFixed(1); $('live-score-outof').textContent = ' / ' + r.max + ' marks';
-      $('live-grade').textContent = r.checked ? 'Indicative ' + r.letter : 'Not assessed';
-      $('grade-progress').style.width = (r.checked / d.profile.criteria.length * 100) + '%';
-      $('review-progress').textContent = r.checked + ' of ' + d.profile.criteria.length + ' criteria have evidence';
+      var out = {};
       d.profile.criteria.forEach(function (c) {
-        var p = r.per[c.criterionId], badge = $('crit-result-' + c.criterionId), foot = $('crit-marks-' + c.criterionId);
-        if (badge) badge.textContent = p.ticks ? p.grade : '—';
-        if (foot) foot.textContent = p.points.toFixed(2) + ' / ' + c.maxMarks + ' marks · ' + p.ticks + ' tick' + (p.ticks === 1 ? '' : 's');
+        var checks = {};
+        var card = document.querySelector('.criterion-card[data-cid="' + c.criterionId + '"]');
+        if (card) {
+          card.querySelectorAll('.obs-check').forEach(function (cb) {
+            if (cb.checked) checks[cb.getAttribute('data-obs-id')] = true;
+          });
+          var note = card.querySelector('.crit-note');
+          out[c.criterionId] = {
+            checkboxes: checks,
+            teacherWrittenNote: note ? note.value : '',
+            aiProposedGrade: '',
+            aiEvidence: []
+          };
+        }
       });
+      return out;
     }
-    function markDirty() { state.dirty = true; $('save-state').textContent = 'Unsaved changes'; $('approve-grade').disabled = true; updateLiveScore(); }
-    $('criterion-list').addEventListener('change', function (e) {
-      if (!e.target.matches('[data-check]') || !state.grade || state.grade.readOnly) return;
-      var st = state.grade.criteriaMap[e.target.dataset.cid]; st.checkboxes[e.target.dataset.check] = e.target.checked; st.teacherAdjusted = true;
-      markDirty();
+
+    function updateLiveScore() {
+      var d = state.grade;
+      if (!d || !d.profile) return;
+      var cur = collectCurrentCriteria();
+      var total = 0;
+      var maxTotal = d.profile.totalMaxMarks || 10;
+      d.profile.criteria.forEach(function (c) {
+        var stateCrit = cur[c.criterionId] || { checkboxes: {} };
+        if (c.mdOverride && stateCrit.checkboxes[c.mdOverride.id]) { total += c.maxMarks; }
+        else {
+          for (var b = 0; b < c.bandOrder.length; b++) {
+            var bandKey = c.bandOrder[b];
+            var obs = c.bands[bandKey] || [];
+            var tickedCount = 0;
+            for (var o = 0; o < obs.length; o++) {
+              if (stateCrit.checkboxes[obs[o].id]) tickedCount++;
+            }
+            if (obs.length) {
+              var w = c.bandWeights && c.bandWeights[bandKey] != null ? c.bandWeights[bandKey] : 1.0;
+              total += tickedCount * ((c.maxMarks * w) / obs.length);
+            }
+          }
+        }
+      });
+      total = Math.min(maxTotal, total);
+      $('live-score').textContent = total.toFixed(1);
+      $('live-score-outof').textContent = ' / ' + maxTotal + ' marks';
+      var pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
+      var grade = pct >= 85 ? 'A' : pct >= 75 ? 'B' : pct >= 65 ? 'C' : pct >= 50 ? 'D' : 'E';
+      $('live-grade').textContent = grade + ' (' + Math.round(pct) + '%)';
+    }
+
+    document.addEventListener('change', function (e) {
+      if (e.target.classList.contains('obs-check') || e.target.classList.contains('crit-note') || ['feedback-well','feedback-next','feedback-goals'].indexOf(e.target.id) !== -1) {
+        state.dirty = true;
+        $('save-state').textContent = 'Unsaved changes';
+        updateLiveScore();
+      }
     });
-    $('criterion-list').addEventListener('input', function (e) {
-      if (!e.target.matches('[data-note]') || !state.grade || state.grade.readOnly) return;
-      state.grade.criteriaMap[e.target.dataset.note].teacherWrittenNote = e.target.value; markDirty();
-    });
-    ['feedback-well','feedback-next','feedback-goals'].forEach(function (id) { $(id).addEventListener('input', markDirty); });
-    var speaking = null;
-    $('criterion-list').addEventListener('click', function (e) {
-      var mic = e.target.closest('[data-dictate]'); if (!mic || mic.disabled) return;
-      var Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!Recognition) { notify('Dictation is not available in this browser. You can always type your observation.', true); return; }
-      if (speaking) { speaking.stop(); speaking = null; mic.textContent = '◉ Dictate'; return; }
-      var id = mic.dataset.dictate, input = $('note-' + id), rec = new Recognition();
-      rec.lang = 'en-AU'; rec.interimResults = false; rec.continuous = true;
-      rec.onresult = function (ev) { for (var i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) {
-        input.value += (input.value && !/\s$/.test(input.value) ? ' ' : '') + ev.results[i][0].transcript.trim();
-        state.grade.criteriaMap[id].teacherWrittenNote = input.value; markDirty();
-      } };
-      rec.onerror = function (ev) { notify('Dictation unavailable: ' + ev.error + '. Type a note instead.', true); };
-      rec.onend = function () { speaking = null; mic.textContent = '◉ Dictate'; };
-      try { rec.start(); speaking = rec; mic.textContent = '■ Stop'; } catch (err) { fail(err); }
-    });
-    $('back-to-task').addEventListener('click', function () { if (changed()) { state.dirty = false; openTask(state.taskName); } });
-    function criteriaPayload() { return state.grade.criteriaMap; }
-    function feedbackPayload() { return {whatWentWell:$('feedback-well').value, areasForImprovement:$('feedback-next').value, goalsForNextAssessment:$('feedback-goals').value}; }
+
     $('save-draft').addEventListener('click', async function () {
-      if (!state.grade || state.grade.readOnly) return;
+      var d = state.grade;
+      if (!d) return;
+      var cur = collectCurrentCriteria();
+      var fb = {
+        whatWentWell: $('feedback-well').value,
+        areasForImprovement: $('feedback-next').value,
+        goalsForNextAssessment: $('feedback-goals').value
+      };
       try {
-        var d = state.grade;
-        var r = await request('apiWebSaveDraft', [state.workbookId,state.taskName,d.submission.submissionRecordId,criteriaPayload(),feedbackPayload(),d.revision]);
-        state.dirty = false; notify(r.message); await openStudent(d.submission.submissionRecordId);
+        var res = await request('apiWebSaveDraft', [state.workbookId, state.taskName, d.submission.submissionRecordId, cur, fb, d.revision]);
+        state.dirty = false;
+        notify(res.message);
+        d.revision = res.revision;
+        d.assessmentId = res.revision;
+        $('approve-grade').disabled = false;
+        $('save-state').textContent = 'Draft saved';
       } catch (err) { fail(err); }
     });
+
     $('approve-grade').addEventListener('click', async function () {
-      var d = state.grade; if (!d || d.readOnly || state.dirty) return;
-      if (!window.confirm('Approve this teacher-reviewed assessment? The grade is saved to ApprovedGrades. It will NOT be sent to Google Classroom. Approval cannot be edited; use a reassessment for changes.')) return;
-      try { var r = await request('apiWebApprove', [state.workbookId,state.taskName,d.submission.submissionRecordId,d.revision]); notify(r.message); await openStudent(d.submission.submissionRecordId); }
-      catch (err) { fail(err); }
-    });
-    $('lock-grade').addEventListener('click', async function () {
-      var d = state.grade; if (!d || d.submission.status !== 'Approved') return;
-      if (!window.confirm('Permanently lock this approved assessment? Further changes will require a new reassessment version.')) return;
-      try { var r = await request('apiWebLock',[state.workbookId,state.taskName,d.submission.submissionRecordId]); notify(r.message); await openStudent(d.submission.submissionRecordId); }
-      catch (err) { fail(err); }
-    });
-    $('new-reassessment').addEventListener('click', async function () {
-      var d = state.grade; if (!d) return;
-      if (!window.confirm('Create a new submission version for reassessment? The existing approved grade and history stay unchanged.')) return;
-      try { var r = await request('apiWebReassess',[state.workbookId,state.taskName,d.submission.submissionRecordId]); notify(r.message); openStudent(r.submissionRecordId); }
-      catch (err) { fail(err); }
-    });
-    $('run-ai').addEventListener('click', async function () {
-      var d = state.grade; if (!d || d.readOnly) return;
-      if (state.dirty) { notify('Save or discard your current edits before asking Gemini to propose a draft.', true); return; }
-      if (!window.confirm('Send eligible submitted Drive files to Gemini for an evidence-only draft? AI may replace the current draft checkboxes. It cannot approve or publish a grade.')) return;
-      try { var r = await request('apiWebRunAi',[state.workbookId,state.taskName,d.submission.submissionRecordId,d.revision]); notify(r.message + (r.skipped && r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : '')); await openStudent(d.submission.submissionRecordId); }
-      catch (err) { fail(err); }
-    });
-    $('download-report').addEventListener('click', async function () {
-      var d = state.grade; if (!d) return;
-      try { var r = await request('apiWebReport',[state.workbookId,state.taskName,d.submission.submissionRecordId]); var a = document.createElement('a'); a.href = r.dataUrl; a.download = r.fileName; document.body.appendChild(a); a.click(); a.remove(); notify('Report PDF downloaded.'); }
-      catch (err) { fail(err); }
-    });
-
-    function renderRubrics() {
-      $('overview-rubrics').textContent = state.rubrics.length;
-      var html = state.rubrics.length ? state.rubrics.map(function (r) { return '<button type="button" class="rubric-tile" data-source="' + escape(r.id) + '"><div class="tile-top"><span class="tile-icon sky">◇</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(r.name) + '</span><span class="tile-meta">Shared source · Preview & review →</span></button>'; }).join('') : genericEmpty('A clean slate', 'Upload a rubric or build one manually for any project.');
-      $('shared-rubric-list').innerHTML = html;
-      fillSelect('editor-source',state.rubrics,'Start from scratch',state.editor.sourceId);
-      fillSelect('create-rubric',state.rubrics,'Choose later — no rubric active');
-    }
-    async function refreshRubrics() { try { state.rubrics = await request('apiWebListSharedRubrics'); renderRubrics(); } catch(err) { fail(err); } }
-    function defaultCriterion() { return {title:'',part:'',section:'',maxMarks:'',outcome:'',bands:{A:[''],B:[''],C:[''],D:[''],E:['']}}; }
-    async function startEditor(sourceId) {
-      if (!state.workbooks.length) { notify('Create or open a workbook before activating a rubric.', true); navigate('create'); return; }
-      state.editor = {sourceId: sourceId || '', criteria: [defaultCriterion()], mappings: {}, scale: null};
-      $('editor-name').value = '';
-      $('editor-confirm').checked = false;
-      fillSelect('editor-workbook',state.workbooks,'Select workbook',state.workbookId);
-      fillSelect('editor-source',state.rubrics,'Start from scratch',sourceId);
-      setView('rubric-editor','Rubric studio');
-      await editorLoadTasks();
-      if (sourceId) await loadSource(sourceId);
-      else renderEditor();
-    }
-    async function editorLoadTasks() {
-      state.workbookId = $('editor-workbook').value;
-      if (!state.workbookId) { fillSelect('editor-task',[],'Select task'); state.editor.scale = null; updateEditorSummary(); return; }
+      var d = state.grade;
+      if (!d) return;
+      if (!window.confirm('Approve grade snapshot for ' + d.submission.studentName + '? Approved grades are immutable.')) return;
       try {
-        var tasks = await request('apiWebListWorkbookTasks',[state.workbookId]);
-        fillSelect('editor-task',tasks.map(function (t){return {id:t,name:t};}),'Select task',state.taskName);
-        if (!$('editor-task').value && tasks.length === 1) $('editor-task').value = tasks[0];
-        state.editor.scale = await request('apiWebGetGradeScale',[state.workbookId]);
-        updateEditorSummary();
-      } catch (err) { fail(err); }
-    }
-    $('editor-workbook').addEventListener('change', function () { state.taskName = ''; editorLoadTasks(); });
-    $('editor-task').addEventListener('change', function () { state.taskName = $('editor-task').value; });
-    $('editor-source').addEventListener('change', function () { state.editor.sourceId = this.value; });
-    async function loadSource(id) {
-      var wb = $('editor-workbook').value, task = $('editor-task').value;
-      if (!wb || !task) { notify('Select a workbook and task first.', true); return; }
-      try {
-        var r = await request('apiWebPreviewRubric',[wb,task,id]);
-        state.editor.sourceId = id;
-        var groups = [], byName = Object.create(null);
-        (r.rows || []).forEach(function (row) {
-          var name = String(row.criterion || '');
-          var key = JSON.stringify([row.part || '', row.section || '', name]);
-          if (!byName[key]) { byName[key] = {title:name,part:row.part || '',section:row.section || '',maxMarks:row.maxMarks || '',outcome:row.outcome || '',bands:{}}; groups.push(byName[key]); }
-          var band = String(row.band || 'A').toUpperCase();
-          (byName[key].bands[band] = byName[key].bands[band] || []).push(String(row.description || ''));
-        });
-        state.editor.criteria = groups.length ? groups : [defaultCriterion()];
-        state.editor.mappings = {};
-        $('editor-name').value = state.rubrics.find(function (f) { return f.id === id; })?.name || 'Project rubric';
-        $('editor-confirm').checked = false;
-        renderEditor();
-        if (r.validation && !r.validation.ok) notify('Draft extracted. Review issues: ' + r.validation.errors.join(' '), true);
-        else notify('Rubric loaded as an editable draft. Check every mark and descriptor before activating.');
-      } catch (err) { fail(err); }
-    }
-    $('load-source').addEventListener('click', function () { if ($('editor-source').value) loadSource($('editor-source').value); else notify('Choose a shared rubric first. For a new rubric, use the editor below.'); });
-    document.addEventListener('click', function (e) { var source = e.target.closest('[data-source]'); if (source) startEditor(source.dataset.source); });
-    $('new-manual-rubric').addEventListener('click', function () { startEditor(); });
-    function renderEditor() {
-      var criteria = state.editor.criteria;
-      $('editor-criteria').innerHTML = criteria.map(function (c,i) {
-        var bands = Object.keys(c.bands || {});
-        return '<div class="editor-criterion" data-edit-idx="' + i + '"><div class="tile-top"><div class="eyebrow" style="margin:0">Criterion ' + (i+1) + '</div><button class="btn btn-sm btn-danger" type="button" data-remove-criterion="' + i + '">Remove</button></div><div class="form-grid" style="margin-top:17px"><div class="form-field"><label>Criterion title</label><input data-edit="title" value="' + escape(c.title) + '" placeholder="e.g. Research & ideation"></div><div class="form-field"><label>Marks available</label><input data-edit="maxMarks" type="number" min="0" max="1000" step="0.5" value="' + escape(c.maxMarks) + '" placeholder="10"></div><div class="form-field"><label>Part (optional)</label><input data-edit="part" value="' + escape(c.part) + '" placeholder="e.g. Part A"></div><div class="form-field"><label>Outcome (optional)</label><input data-edit="outcome" value="' + escape(c.outcome) + '" placeholder="e.g. DT5-2"></div><div class="form-field"><label>Section (optional)</label><input data-edit="section" value="' + escape(c.section || '') + '" placeholder="e.g. Design folio"></div></div><div class="eyebrow" style="margin-top:3px">Observable evidence by band</div>' + bands.map(function(b){return '<div class="editor-band"><div class="note-label"><label>Band ' + escape(b) + '</label><button class="btn btn-sm btn-ghost" type="button" data-remove-band="' + escape(b) + '" data-index="' + i + '">Remove band</button></div><textarea data-band="' + escape(b) + '" placeholder="One observable statement per line">' + escape((c.bands[b]||[]).join('\n')) + '</textarea></div>';}).join('') + '<button class="btn btn-sm btn-ghost" type="button" data-add-band="' + i + '">+ Add another band</button></div>';
-      }).join('');
-      updateEditorSummary();
-    }
-    function updateEditorSummary() {
-      var cs = state.editor.criteria;
-      $('editor-count').textContent = cs.length + ' criterion' + (cs.length === 1 ? '' : 'a');
-      var total = cs.reduce(function (s,c) { return s + (parseFloat(c.maxMarks) || 0); },0);
-      $('editor-total').textContent = total + ' marks allocated';
-      var scale = state.editor.scale;
-      $('editor-scale').innerHTML = scale && scale.weights ? '<hr class="subtle-rule"><div class="eyebrow">A–E weights · verify before activation</div><div style="display:flex;flex-wrap:wrap;gap:5px">' + ['A','B','C','D','E'].map(function (b) {
-        return '<span class="pill">' + b + ' · ' + (scale.weights[b] * 100).toFixed(1) + '%</span>';
-      }).join('') + '</div><p class="muted tiny" style="margin:9px 0 0">Read from this workbook’s Setup sheet, or defaults when none is present.</p>' : '';
-      var unknown = Object.create(null);
-      cs.forEach(function(c){ Object.keys(c.bands||{}).forEach(function(b){ if (!['A','B','C','D','E'].includes(b) && (c.bands[b] || []).some(function(x){return x.trim();})) unknown[b]=true; }); });
-      $('editor-mappings').innerHTML = Object.keys(unknown).length ? '<hr class="subtle-rule"><div class="eyebrow">Explicit band weights</div><p class="muted tiny">Custom band labels need a teacher-set fraction from 0 (zero marks) to 1 (full marks).</p>' + Object.keys(unknown).map(function(b){return '<div class="mapping-row"><label for="mapping-' + escape(b) + '">' + escape(b) + '</label><input id="mapping-' + escape(b) + '" type="number" min="0" max="1" step="0.001" data-mapping="' + escape(b) + '" placeholder="0–1" value="' + escape(state.editor.mappings[b] || '') + '"></div>';}).join('') : '';
-    }
-    $('editor-criteria').addEventListener('input', function (e) {
-      var root = e.target.closest('[data-edit-idx]'); if (!root) return;
-      var c = state.editor.criteria[Number(root.dataset.editIdx)];
-      if (e.target.dataset.edit) c[e.target.dataset.edit] = e.target.value;
-      if (e.target.dataset.band) c.bands[e.target.dataset.band] = e.target.value.split('\n');
-      updateEditorSummary();
-    });
-    $('editor-mappings').addEventListener('input', function (e) { if (e.target.dataset.mapping) state.editor.mappings[e.target.dataset.mapping] = e.target.value; });
-    $('editor-criteria').addEventListener('click', function (e) {
-      var remove = e.target.closest('[data-remove-criterion]');
-      if (remove) { if (state.editor.criteria.length > 1) { state.editor.criteria.splice(Number(remove.dataset.removeCriterion),1); renderEditor(); } else notify('A rubric needs at least one criterion.', true); return; }
-      var add = e.target.closest('[data-add-band]');
-      if (add) { var c = state.editor.criteria[Number(add.dataset.addBand)]; var band = window.prompt('Band label (e.g. Level 4 or F):'); if (band && band.trim()) { var b = band.trim().toUpperCase().slice(0,24); if (c.bands[b]) { notify('That band already exists.', true); return; } c.bands[b] = ['']; renderEditor(); } return; }
-      var del = e.target.closest('[data-remove-band]');
-      if (del) { var item = state.editor.criteria[Number(del.dataset.index)]; delete item.bands[del.dataset.removeBand]; renderEditor(); }
-    });
-    function addCriterion() { state.editor.criteria.push(defaultCriterion()); renderEditor(); $('editor-criteria').lastElementChild.scrollIntoView({behavior:'smooth',block:'center'}); }
-    $('editor-add-criterion').addEventListener('click',addCriterion); $('editor-add-another').addEventListener('click',addCriterion);
-    $('activate-rubric').addEventListener('click', async function () {
-      var wb=$('editor-workbook').value, task=$('editor-task').value;
-      if (!wb || !task) { notify('Choose a workbook and task.',true); return; }
-      if (!$('editor-confirm').checked) { notify('Review the original rubric and tick the confirmation before activation.',true); return; }
-      var name=$('editor-name').value.trim(); if (!name) { notify('Name your rubric.',true); return; }
-      var rows=[];
-      state.editor.criteria.forEach(function(c){ Object.keys(c.bands || {}).forEach(function(b){ (c.bands[b] || []).forEach(function(desc){ if (desc.trim()) rows.push({criterion:c.title.trim(),part:c.part.trim(),section:c.section || '',maxMarks:c.maxMarks,outcome:c.outcome.trim(),band:b,description:desc.trim()}); }); }); });
-      if (!rows.length) { notify('Add some observable evidence before activating.',true); return; }
-      if (!window.confirm('Activate this reviewed rubric for “' + task + '”? Existing student assessments stay pinned to their original version.')) return;
-      try {
-        var r = await request('apiWebActivateRubric',[wb,task,name,state.editor.sourceId,rows,state.editor.mappings,true]);
-        notify(r.message); state.workbookId=wb; state.taskName=task; await openTask(task);
+        var res = await request('apiWebApprove', [state.workbookId, state.taskName, d.submission.submissionRecordId, d.revision]);
+        state.dirty = false;
+        notify(res.message);
+        d.submission.status = 'Approved';
+        $('student-status').textContent = 'Approved';
+        $('student-status').className = 'pill green';
+        $('save-draft').disabled = true;
+        $('approve-grade').disabled = true;
+        $('lock-grade').hidden = false;
+        $('save-state').textContent = 'Approved snapshot';
       } catch (err) { fail(err); }
     });
-    function readFile(file) {
-      return new Promise(function(resolve,reject){
-        if (!file) { reject(new Error('Choose a rubric file.')); return; }
-        if (file.size > 8*1024*1024) { reject(new Error('Files must be under 8 MB.')); return; }
-        var ext=file.name.toLowerCase().split('.').pop(), mime={pdf:'application/pdf',md:'text/markdown',txt:'text/plain'}[ext];
-        if (!mime) { reject(new Error('Upload a PDF, Markdown or text file.')); return; }
-        var reader=new FileReader(); reader.onerror=function(){reject(new Error('Could not read the file.'));};
-        reader.onload=function(){resolve({fileName:file.name,mimeType:mime,base64:String(reader.result).split(',')[1]});};
-        reader.readAsDataURL(file);
-      });
-    }
-    $('upload-rubric').addEventListener('click', async function () {
-      var name=$('upload-name').value.trim(); if (!name) { notify('Name your rubric first.',true); return; }
-      try { var doc=await readFile($('upload-file').files[0]); var r=await request('apiWebUploadRubric',[name,doc]); notify('Extracted as a shared rubric. Review before activating.'); $('upload-file').value=''; await refreshRubrics(); startEditor(r.rubricFileId); }
-      catch (err) { fail(err); }
+
+    // Voice Dictation
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.dictate-btn');
+      if (!btn) return;
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) { notify('Speech recognition is not supported in this browser. Please type directly.', true); return; }
+      if (btn.classList.contains('active')) {
+        if (state.speechRecognition) state.speechRecognition.stop();
+        btn.classList.remove('active');
+        return;
+      }
+      btn.classList.add('active');
+      var rec = new SpeechRecognition();
+      rec.lang = 'en-AU';
+      rec.continuous = false;
+      rec.interimResults = false;
+      state.speechRecognition = rec;
+      rec.onresult = function (event) {
+        var transcript = event.results[0][0].transcript;
+        var cid = btn.getAttribute('data-dictate-target');
+        if (cid) {
+          var textarea = document.querySelector('.crit-note[data-crit-note="' + cid + '"]');
+          if (textarea) { textarea.value += (textarea.value ? ' ' : '') + transcript; state.dirty = true; }
+        } else if (btn.id === 'dictate-variations') {
+          $('prefill-variations').value += ($('prefill-variations').value ? ' ' : '') + transcript;
+        } else if (btn.id === 'dictate-feedback') {
+          $('prefill-feedback').value += ($('prefill-feedback').value ? ' ' : '') + transcript;
+        }
+        btn.classList.remove('active');
+      };
+      rec.onerror = function () { btn.classList.remove('active'); };
+      rec.onend = function () { btn.classList.remove('active'); };
+      rec.start();
     });
 
-    $('create-year').value=String(new Date().getFullYear());
-    $('create-form').addEventListener('submit', async function (e) {
-      e.preventDefault();
+    // Class Table Matrix
+    async function loadClassTable() {
+      if (!state.workbookId || !state.taskName) {
+        $('class-table-matrix').innerHTML = '<div class="card card-pad" style="text-align:center">Select a workbook and task first.</div>';
+        return;
+      }
       try {
-        var code=$('create-code').value.trim(), task=$('create-task').value.trim(), yr=$('create-year').value.trim(), rubric=$('create-rubric').value;
-        var r=await request('apiWebCreateWorkbook',[code,task,yr,rubric,'',null]);
-        notify(r.message); await refreshWorkbooks(); state.workbookId=r.workbook.id; state.taskName=task;
-        if (r.selectedRubricId) startEditor(r.selectedRubricId); else { await openWorkbook(r.workbook.id); openTask(task); }
-      } catch(err) { fail(err); }
+        var data = await request('apiWebGetClassTableData', [state.workbookId, state.taskName]);
+        var rows = data.rows || [];
+        var html = '<table class="data-table"><thead><tr><th>Student</th><th>Class</th><th>Task</th><th>Type</th><th>Raw</th><th>Deduction</th><th>Final</th><th>Grade</th><th>Status</th></tr></thead><tbody>';
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          html += '<tr><td><strong>' + escape(r.studentName) + '</strong></td>' +
+            '<td>' + escape(r.className) + '</td>' +
+            '<td>' + escape(r.taskName) + '</td>' +
+            '<td><span class="pill ' + (r.assessmentType === 'Summative' ? 'blue' : 'yellow') + '">' + escape(r.assessmentType) + '</span></td>' +
+            '<td>' + (r.rawScore != null ? r.rawScore.toFixed(1) : '—') + '</td>' +
+            '<td>' + (r.deductionPoints > 0 ? '-' + r.deductionPoints.toFixed(1) : '0') + '</td>' +
+            '<td><strong>' + (r.finalScore != null ? r.finalScore.toFixed(1) : '—') + '</strong></td>' +
+            '<td><span class="pill ' + (r.grade === 'A' ? 'green' : 'gray') + '">' + escape(r.grade) + '</span></td>' +
+            '<td>' + escape(r.status) + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        $('class-table-matrix').innerHTML = html;
+      } catch (err) { fail(err); }
+    }
+
+    $('btn-sync-class-sheet').addEventListener('click', async function () {
+      try {
+        var res = await request('apiWebSyncClassTable', [state.workbookId, state.taskName, {
+          termPair: $('table-term-pair').value,
+          stage: $('table-stage').value,
+          className: $('table-class').value
+        }]);
+        notify(res.message);
+      } catch (err) { fail(err); }
     });
 
-    async function loadClassroom() {
-      fillSelect('class-workbook',state.workbooks,'Select workbook',state.workbookId);
-      await loadClassTasks();
-      try { var r=await request('apiWebListTeacherCourses'); fillSelect('class-course',r.courses || [],'Choose course'); }
-      catch(err){fail(err);}
+    // Rubric Library & Editor
+    async function refreshRubrics() {
+      try {
+        state.rubrics = await request('apiWebListSharedRubrics');
+        $('overview-rubrics').textContent = state.rubrics.length;
+        $('shared-rubric-list').innerHTML = state.rubrics.length ? state.rubrics.map(function (r) {
+          return '<div class="workbook-card"><div class="tile-top"><span class="tile-icon">◇</span></div><span class="tile-title">' + escape(r.name) + '</span><span class="tile-meta">Shared Drive Profile</span></div>';
+        }).join('') : '<div class="empty">No shared rubrics found.</div>';
+      } catch (err) { fail(err); }
     }
-    async function loadClassTasks() {
-      var id=$('class-workbook').value; fillSelect('class-task',[],'Select task');
-      if (!id) return;
-      try { var r=await request('apiWebListWorkbookTasks',[id]); fillSelect('class-task',r.map(function(t){return {id:t,name:t};}),'Select task',state.taskName); }
-      catch(err){fail(err);}
+
+    $('new-manual-rubric').addEventListener('click', function () {
+      setView('rubric-editor', 'Build Task Rubric');
+      ['editor-workbook'].forEach(function (id) { fillSelect(id, state.workbooks, 'Select workbook', state.workbookId); });
+      $('editor-criteria').innerHTML = '<div class="card card-pad editor-criterion" style="margin-bottom:12px"><h4>Criterion 1</h4><div class="form-field"><label>Title</label><input class="crit-title" value="Functional mechanism"></div><div class="form-field"><label>Max Marks</label><input type="number" class="crit-marks" value="10"></div></div>';
+      $('editor-count').textContent = '1 Criterion';
+      $('editor-total').textContent = '10 Total Marks';
+    });
+
+    // Audit Studio (Registration & Samples)
+    async function loadAuditStudio() {
+      if (!state.workbookId || !state.taskName) {
+        $('cohort-status-box').innerHTML = '<div class="tiny muted">Select a workbook and task first.</div>';
+        return;
+      }
+      try {
+        var check = await request('apiWebVerifyGradingComplete', [state.workbookId, state.taskName]);
+        $('cohort-status-box').innerHTML = check.complete ?
+          '<div class="pill green">All ' + check.total + ' student grades finalised and verified.</div>' :
+          '<div class="pill yellow">' + check.pendingCount + ' of ' + check.total + ' students pending completion.</div>';
+
+        var sugg = await request('apiWebSuggestWorkSamples', [state.workbookId, state.taskName, $('sample-policy').value]);
+        $('sample-proposals-box').innerHTML = '<div style="display:flex;flex-direction:column;gap:8px">' +
+          '<div class="note"><strong>HIGH Sample:</strong> ' + escape(sugg.proposals.high.studentName) + ' (' + sugg.proposals.high.score + 'm, ' + sugg.proposals.high.grade + ') — ' + escape(sugg.proposals.high.reason) + '</div>' +
+          '<div class="note"><strong>MED Sample:</strong> ' + escape(sugg.proposals.med.studentName) + ' (' + sugg.proposals.med.score + 'm, ' + sugg.proposals.med.grade + ') — ' + escape(sugg.proposals.med.reason) + '</div>' +
+          '<div class="note"><strong>LOW Sample:</strong> ' + escape(sugg.proposals.low.studentName) + ' (' + sugg.proposals.low.score + 'm, ' + sugg.proposals.low.grade + ') — ' + escape(sugg.proposals.low.reason) + '</div>' +
+          '</div>';
+
+        var dash = await request('apiWebGetAuditDashboard', [state.workbookId]);
+        $('audit-dashboard-matrix').innerHTML = '<div class="table-container"><table class="data-table"><thead><tr><th>Task</th><th>Approved Grades</th><th>Registration Doc</th><th>Samples Placed</th><th>Compliance</th></tr></thead><tbody>' +
+          (dash.tasks || []).map(function (t) {
+            return '<tr><td><strong>' + escape(t.taskName) + '</strong></td>' +
+              '<td>' + t.approvedGradesCount + '</td>' +
+              '<td><span class="pill ' + (t.registrationDocStatus === 'Complete' ? 'green' : 'yellow') + '">' + escape(t.registrationDocStatus) + '</span></td>' +
+              '<td>' + t.sampleCounts.total + ' / 3</td>' +
+              '<td><span class="pill ' + (t.auditComplete ? 'green' : 'gray') + '">' + (t.auditComplete ? 'Compliant' : 'In Progress') + '</span></td></tr>';
+          }).join('') + '</tbody></table></div>';
+      } catch (err) { fail(err); }
     }
-    $('class-workbook').addEventListener('change',loadClassTasks);
-    $('class-course').addEventListener('change',async function () {
-      var course=$('class-course').value, box=$('class-coursework'); box.innerHTML='';
-      if (!course) return;
-      try { var r=await request('apiWebListCourseWork',[course]); var works=r.coursework || [];
-        box.innerHTML=works.length ? works.map(function(w){return '<div class="card card-pad" style="box-shadow:none;margin-bottom:9px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><strong style="font-size:12px">' + escape(w.title) + '</strong><br><small class="muted">' + escape(w.dueDate || 'No due date') + '</small></div><button type="button" class="btn btn-sm" data-link-work="' + escape(w.id) + '" data-link-title="' + escape(w.title) + '">Link →</button></div>';}).join('') : '<p class="muted tiny">No assignments in this course.</p>';
-      }catch(err){fail(err);}
+
+    $('btn-lock-cohort').addEventListener('click', async function () {
+      if (!window.confirm('Lock cohort grading for ' + state.taskName + '?')) return;
+      try {
+        var res = await request('apiWebSetGradingComplete', [state.workbookId, state.taskName, true]);
+        notify(res.message);
+        loadAuditStudio();
+      } catch (err) { fail(err); }
     });
-    $('class-coursework').addEventListener('click',async function(e){
-      var button=e.target.closest('[data-link-work]'); if (!button) return;
-      var wb=$('class-workbook').value, task=$('class-task').value, course=$('class-course').value;
-      if (!wb || !task || !course) { notify('Choose a workbook, task and course first.',true); return; }
-      if (!window.confirm('Link “' + button.dataset.linkTitle + '” to “' + task + '”? You can then import submissions from the task dashboard.')) return;
-      try{var r=await request('apiWebLinkClassroomAssignment',[wb,task,course,button.dataset.linkWork]);notify(r.message);}catch(err){fail(err);}
+
+    $('btn-save-prefill').addEventListener('click', async function () {
+      var fieldValues = {
+        unitName: state.taskName,
+        teacher: $('account-email').textContent,
+        dates: new Date().toISOString().slice(0, 10),
+        syllabusOutcomes: 'DT5-1, DT5-2, DT5-3',
+        gradeDistribution: 'Approved cohort distribution',
+        teacherVariations: $('prefill-variations').value,
+        curriculumAdjustments: 'Scaffolding provided',
+        studentFeedbackSummary: $('prefill-feedback').value
+      };
+      try {
+        var res = await request('apiWebSaveRegistrationPrefill', [state.workbookId, state.taskName, $('prefill-doc-id').value, fieldValues, true]);
+        notify(res.message);
+        loadAuditStudio();
+      } catch (err) { fail(err); }
     });
+
+    $('btn-save-samples').addEventListener('click', async function () {
+      var sugg = await request('apiWebSuggestWorkSamples', [state.workbookId, state.taskName, $('sample-policy').value]);
+      if (!window.confirm('Place HIGH, MED, and LOW work sample copies in Drive for ' + state.taskName + '?')) return;
+      try {
+        var res = await request('apiWebSaveWorkSamples', [state.workbookId, state.taskName, sugg.proposals, {}, true]);
+        notify(res.message);
+        loadAuditStudio();
+      } catch (err) { fail(err); }
+    });
+
+    // Settings
+    async function loadSettings() {
+      try {
+        var data = await request('apiWebGetSettings');
+        state.settings = data.settings;
+        renderSettings();
+      } catch (err) { fail(err); }
+    }
 
     function renderSettings() {
-      $('key-status').textContent=state.keyConfigured ? '✓ Key configured in Script Properties' : '○ No key configured yet';
-      $('overview-gemini').textContent=state.keyConfigured ? 'Ready' : 'Not set';
+      var s = state.settings;
+      if (!s) return;
+      var tRows = '';
+      (s.thresholds || []).forEach(function (b, idx) {
+        tRows += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
+          '<strong style="width:24px">' + escape(b.letter) + '</strong>' +
+          '<input type="number" class="thresh-min" data-idx="' + idx + '" value="' + b.min + '" style="width:80px"> % to ' +
+          '<input type="number" class="thresh-max" data-idx="' + idx + '" value="' + b.max + '" style="width:80px"> %' +
+          '</div>';
+      });
+      $('thresholds-editor-rows').innerHTML = tRows;
+      $('deduct-type').value = s.deductions.type || 'none';
+      $('deduct-rate').value = s.deductions.rate || 10;
+      $('feedback-template-text').value = s.feedbackTemplate || '';
+      $('gemini-model').value = s.aiProviders.geminiModel || 'gemini-2.5-flash';
+      $('jev-code').value = s.aiProviders.jevSubjectCode || '9JEV';
     }
-    $('save-key').addEventListener('click',async function(){
-      var input=$('gemini-key'), key=input.value; if (!key.trim()) {notify('Enter a key to save.',true);return;}
-      try {var r=await request('apiWebSetGeminiKey',[key]); input.value=''; state.keyConfigured=true; renderSettings(); notify(r.message);}
-      catch(err){fail(err);} finally {key='';}
-    });
-    $('test-key').addEventListener('click',async function(){try{var r=await request('apiWebTestGeminiKey');notify(r.message);}catch(err){fail(err);}});
-    $('refresh-workbooks').addEventListener('click',refreshWorkbooks);
-    $('retry-auth').addEventListener('click',boot);
 
-    async function boot(){
+    $('save-key').addEventListener('click', async function () {
+      var key = $('gemini-key').value;
+      if (!key) { notify('Please enter a Gemini API key to save.', true); return; }
       try {
-        var result=await request('apiWebAuthStatus');
-        state.authorised=!!result.authorised; state.keyConfigured=!!result.keyConfigured;
-        $('connection-text').textContent=result.authorised ? 'Teacher access' : 'Access needed';
-        $('account-email').textContent=result.email || 'Not signed in';
-        if (!result.authorised) {setView('denied','Access needed');return;}
-        setView('overview','Overview'); renderSettings();
-        await Promise.all([refreshWorkbooks(), refreshRubrics()]);
-      }catch(err){fail(err);setView('denied','Access needed');}
+        var res = await request('apiWebSetGeminiKey', [key]);
+        $('gemini-key').value = '';
+        $('key-status').textContent = '✓ Key configured in Script Properties';
+        $('key-status').style.color = '#2e7d32';
+        notify(res.message || 'Key saved securely.');
+      } catch (err) { fail(err); }
+    });
+
+    $('save-all-settings').addEventListener('click', async function () {
+      var bands = [];
+      document.querySelectorAll('.thresh-min').forEach(function (el) {
+        var idx = el.getAttribute('data-idx');
+        var maxEl = document.querySelector('.thresh-max[data-idx="' + idx + '"]');
+        var letter = ['A','B','C','D','E'][idx];
+        bands.push({ letter: letter, min: parseFloat(el.value), max: parseFloat(maxEl.value) });
+      });
+      var patch = {
+        thresholds: bands,
+        deductions: {
+          type: $('deduct-type').value,
+          rate: parseFloat($('deduct-rate').value),
+          maxDeductionPercent: 50,
+          excludeWeekends: $('deduct-weekends').checked,
+          graceHours: parseFloat($('deduct-grace').value) || 0,
+          minFloor: 0
+        },
+        feedbackTemplate: $('feedback-template-text').value,
+        aiProviders: {
+          defaultProvider: 'gemini',
+          geminiModel: $('gemini-model').value,
+          jevSubjectCode: $('jev-code').value
+        }
+      };
+      if ($('gemini-key').value) patch.geminiApiKey = $('gemini-key').value;
+      try {
+        var res = await request('apiWebSaveSettings', [patch]);
+        notify(res.message);
+        $('gemini-key').value = '';
+      } catch (err) { fail(err); }
+    });
+
+    $('btn-preview-recalc').addEventListener('click', async function () {
+      if (!state.workbookId) { notify('Select a workbook to preview recalculation.', true); return; }
+      var bands = [];
+      document.querySelectorAll('.thresh-min').forEach(function (el) {
+        var idx = el.getAttribute('data-idx');
+        var maxEl = document.querySelector('.thresh-max[data-idx="' + idx + '"]');
+        bands.push({ letter: ['A','B','C','D','E'][idx], min: parseFloat(el.value), max: parseFloat(maxEl.value) });
+      });
+      try {
+        var prev = await request('apiWebPreviewThresholdRecalc', [state.workbookId, bands]);
+        $('thresholds-recalc-preview').innerHTML = '<div class="note">Evaluated ' + prev.preview.totalEvaluated + ' student(s). ' + prev.preview.changedCount + ' grade change(s) would occur upon review.</div>';
+      } catch (err) { fail(err); }
+    });
+
+    $('test-key').addEventListener('click', async function () {
+      $('key-status').textContent = 'Testing connection…';
+      try {
+        var res = await request('apiWebTestGeminiKey');
+        $('key-status').textContent = '✓ ' + (res.message || 'Connected');
+        $('key-status').style.color = '#2e7d32';
+      } catch (err) {
+        $('key-status').textContent = '✗ ' + err.message;
+        $('key-status').style.color = '#c62828';
+      }
+    });
+
+    // Formative Rubric Generation
+    $('btn-generate-formative').addEventListener('click', async function () {
+      var title = window.prompt('Enter assignment title for formative rubric generation:', 'Water Filtration Interim');
+      if (!title) return;
+      try {
+        var res = await request('apiWebGenerateFormativeRubric', [{ title: title, maxMarks: 20 }]);
+        notify('Generated draft formative rubric for ' + title + '. Review before activation.');
+        navigate('rubrics');
+      } catch (err) { fail(err); }
+    });
+
+    async function init() {
+      if (window.__LESSON_GRADER_PREVIEW__) {
+        document.body.classList.add('preview-mode');
+        $('gemini-key').disabled = true;
+        $('save-key').disabled = true;
+        $('upload-rubric').disabled = true;
+      }
+      try {
+        var auth = await request('apiWebAuthStatus');
+        if (!auth.authorised) { setView('denied', 'Access Denied'); return; }
+        state.authorised = true;
+        $('account-email').textContent = auth.email;
+        $('user-avatar').textContent = auth.email.slice(0, 2).toUpperCase();
+        await refreshWorkbooks();
+        setView('overview', 'Overview');
+      } catch (err) { setView('denied', 'Access Denied'); }
     }
-    if (window.__LESSON_GRADER_PREVIEW__) {
-      document.body.classList.add('preview-mode');
-      ['gemini-key','save-key','test-key','upload-name','upload-file','upload-rubric'].forEach(function (id) { $(id).disabled = true; });
-      $('gemini-key').placeholder = 'Disabled in design preview';
-      $('key-status').textContent = 'Design preview — no live key can be entered here';
-    }
-    boot();
-  }());
+
+    init();
+  })();
   </script>
 </body>
 </html>
