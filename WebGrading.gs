@@ -270,7 +270,8 @@ var WebGrading = (function () {
     var feedback = latestFeedback(ss, submissionId, latest.assessmentId);
     var attachments = attachmentsFor(ss, submissionId);
     var scores = pin.profile ? RubricEngine.scoreProfile(pin.profile, states) : null;
-    var flags = pin.profile ? AssessmentFlags.compute({ profile: pin.profile, states: states, scores: scores, attachments: attachments, feedback: feedback }) :
+    var flags = pin.profile ? AssessmentFlags.compute({ profile: pin.profile, states: states, scores: scores, attachments: attachments, feedback: feedback,
+      evidenceChangedAt: text(sub.EvidenceChangedAt), final: FINAL.indexOf(text(sub.Status)) !== -1 }) :
       { flags: [], blocking: 0, advisory: 0, byCriterion: {} };
     return { assessmentId: latest.assessmentId, rows: latest.rows, profile: pin.profile, legacy: pin.legacy, states: states,
       feedback: feedback, attachments: attachments, scores: scores, flags: flags };
@@ -472,14 +473,16 @@ var WebGrading = (function () {
         if (old) patch(ss, 'CriterionAssessments', old._row, fields);
         else { fields.CreatedAt = timestamp; append(ss, 'CriterionAssessments', fields); }
       });
-      patch(ss, 'Submissions', sub._row, {
+      var subFields = {
         Status: 'InReview',
         AssessmentType: opt.assessmentType || text(sub.AssessmentType) || 'Summative',
         RawScore: scored.totalPoints,
         DeductionPoints: deduction.deductionPoints,
         DeductionReason: deduction.reason,
         FinalScore: deduction.finalScore
-      });
+      };
+      if (source !== 'AI' && text(sub.EvidenceChangedAt)) subFields.EvidenceChangedAt = '';
+      patch(ss, 'Submissions', sub._row, subFields);
       append(ss, 'AIAssessments', {
         AssessmentID: assessmentId, SubmissionRecordID: submissionId, RunType: 'TeacherDraft',
         RunTimestamp: timestamp, ModelUsed: '', PromptVersion: 'web-v2', InputFilesJSON: '[]',
@@ -784,98 +787,164 @@ var WebGrading = (function () {
     } finally { lock.releaseLock(); }
   }
 
-  /* Task-scoped import: never matches a student in a different assignment,
-     never edits approved work, and only creates a new version on new evidence. */
-  function importTask(workbookId, taskName) {
+  /* Normalises Classroom attachments. Drive files are readable evidence;
+     links, YouTube and Forms are recorded and disclosed as not readable. */
+  function classroomAttachments(item) {
+    var out = [];
+    ((item.assignmentSubmission && item.assignmentSubmission.attachments) || []).forEach(function (a) {
+      if (a.driveFile) out.push({ kind: 'driveFile', id: text(a.driveFile.id), title: text(a.driveFile.title), mimeType: text(a.driveFile.mimeType),
+        alternateLink: text(a.driveFile.alternateLink), thumbnailUrl: text(a.driveFile.thumbnailUrl) });
+      else if (a.link) out.push({ kind: 'link', id: 'link:' + text(a.link.url), title: text(a.link.title) || text(a.link.url), alternateLink: text(a.link.url) });
+      else if (a.youTubeVideo) out.push({ kind: 'youTube', id: 'yt:' + text(a.youTubeVideo.id), title: text(a.youTubeVideo.title), alternateLink: text(a.youTubeVideo.alternateLink) });
+      else if (a.form) out.push({ kind: 'form', id: 'form:' + text(a.form.formUrl), title: text(a.form.title), alternateLink: text(a.form.formUrl) });
+    });
+    return out;
+  }
+
+  function appendFileRow(ss, recordId, f) {
+    var drive = f.kind === 'driveFile';
+    var eligible = drive && DriveService.isEligibleForAi(text(f.mimeType));
+    append(ss, 'SubmissionFiles', {
+      SubmissionRecordID: recordId, FileRecordID: uid(), SourceType: f.kind || 'driveFile',
+      DriveFileID: drive ? text(f.id) : '', FileName: text(f.title) || 'Attachment', MimeType: text(f.mimeType),
+      AlternateLink: text(f.alternateLink), ThumbnailUrl: text(f.thumbnailUrl), EligibleForAI: eligible,
+      AIReviewStatus: drive ? 'Pending' : 'Unsupported', Limitations: drive ? '' : 'Linked content (' + f.kind + ') cannot be read automatically; open it to review.',
+      CreatedAt: now()
+    });
+  }
+
+  /**
+   * Imports or refreshes one task's Classroom submissions. Idempotent.
+   *  - new student → new submission row (identity = course + coursework + Classroom userId)
+   *  - New/draft rows: evidence updated in place; teacher drafts are kept and flagged
+   *  - Approved/locked rows: never altered; new evidence is held as pending until the
+   *    teacher deliberately starts a reassessment (SC12)
+   */
+  function importTask(workbookId, taskName, options) {
+    var opt = options || {};
     var target = openTask(workbookId, taskName);
     var ss = target.ss;
     if (!ready(ss)) throw new Error('Enable web grading before importing.');
+    var actor = opt.actor || WebAccess.requireTeacher();
     var links = records(ss, 'ClassroomConfig').filter(function (r) { return text(r.TaskName) === target.task && yes(r.Active) && r.CourseID && r.CourseWorkID; });
     if (!links.length) throw new Error('Link a Classroom assignment to this task first.');
     var cfg = links[links.length - 1];
-    var lock = LockService.getScriptLock();
-    lock.waitLock(10000);
-    try {
-      var raw = [];
-      var token = null;
-      do {
-        var params = { pageSize: 100 };
-        if (token) params.pageToken = token;
-        var page = Classroom.Courses.CourseWork.StudentSubmissions.list(text(cfg.CourseID), text(cfg.CourseWorkID), params);
-        raw = raw.concat(page && page.studentSubmissions || []);
-        token = page && page.nextPageToken;
-      } while (token);
+    var raw = [];
+    var token = null;
+    do {
+      var params = { pageSize: 100 };
+      if (token) params.pageToken = token;
+      var page = Classroom.Courses.CourseWork.StudentSubmissions.list(text(cfg.CourseID), text(cfg.CourseWorkID), params);
+      raw = raw.concat(page && page.studentSubmissions || []);
+      token = page && page.nextPageToken;
+    } while (token);
+    return withLock(function () {
+      upgrade(ss);
       var before = records(ss, 'Submissions');
+      var files = records(ss, 'SubmissionFiles');
       var roster = records(ss, 'ClassLists');
-      var stats = { newCount: 0, newVersions: 0, unchanged: 0 };
+      var stats = { newCount: 0, updated: 0, heldForApproved: 0, unchanged: 0, total: raw.length };
+      var seen = {};
       for (var i = 0; i < raw.length; i++) {
         var item = raw[i];
         var uidString = text(item.userId);
-        if (!uidString) continue;
-        var prior = before.filter(function (r) {
-          return text(r.ClassroomCourseID) === text(cfg.CourseID) &&
-            text(r.ClassroomCourseWorkID) === text(cfg.CourseWorkID) && text(r.StudentUserID) === uidString;
-        }).sort(function (a, b) { return (Number(b.SubmissionVersion) || 1) - (Number(a.SubmissionVersion) || 1); })[0];
-        var attachments = (item.assignmentSubmission && item.assignmentSubmission.attachments || []).filter(function (a) { return !!a.driveFile; }).map(function (a) { return a.driveFile; });
-        var fileIds = attachments.map(function (a) { return text(a.id); }).sort();
-        var oldIds = prior ? parseJson(prior.AttachmentFileIDsJSON, []).map(text).sort() : [];
-        var changed = JSON.stringify(oldIds) !== JSON.stringify(fileIds);
-        if (prior && !changed) { stats.unchanged++; continue; }
-        var identity = null;
-        try { identity = Classroom.UserProfiles.get(uidString); } catch (e) { /* keep verified ID, no fabricated name */ }
-        var name = identity && identity.name && identity.name.fullName || (prior && prior.StudentName) || ('Student ' + uidString);
-        var email = identity && identity.emailAddress || (prior && prior.StudentEmail) || '';
-        var match = roster.filter(function (r) {
-          return !!text(email).trim() && yes(r.Active) && text(r.SchoolEmail).trim().toLowerCase() === text(email).trim().toLowerCase() &&
-            (!text(r.ClassID).trim() || text(r.ClassID).trim() === text(cfg.CourseName).trim());
-        })[0];
-        if (match) name = text(match.PreferredName || match.OfficialName || name);
-        if (!prior && email && before.some(function (r) {
-          return text(r.Task) === target.task && !text(r.ClassroomCourseWorkID) &&
-            text(r.StudentEmail).toLowerCase() === text(email).toLowerCase() &&
-            (r.CurrentOfficial === '' || yes(r.CurrentOfficial));
-        })) {
-          throw new Error('A manual submission already exists for ' + name + ' in this task. Reconcile it before importing their Classroom work. No duplicate was created.');
-        }
-        /* Any changed attachment creates a version, even if the old row is
-           only a draft: never erase earlier files or teacher work. */
-        var version = !!prior;
-        var recordId = uid();
-        var fields = {
-          SubmissionRecordID: recordId, ClassroomCourseID: text(cfg.CourseID),
-          ClassroomCourseWorkID: text(cfg.CourseWorkID), ClassroomSubmissionID: text(item.id),
-          StudentUserID: uidString, StudentName: name, StudentEmail: email,
-          Class: text(cfg.CourseName), Task: target.task,
-          SubmissionVersion: version ? (Number(prior.SubmissionVersion) || 1) + 1 : (prior ? Number(prior.SubmissionVersion) || 1 : 1),
-          SourceType: version ? 'Reassessment' : 'Classroom',
-          ClassroomState: text(item.state), TurnedInTime: text(item.creationTime),
-          UpdateTime: text(item.updateTime) || now(), Late: !!item.late,
-          AttachmentSummary: attachments.length + ' Drive file(s)',
-          AttachmentFileIDsJSON: JSON.stringify(fileIds),
-          AttachmentMetadataJSON: JSON.stringify(attachments), Status: 'New',
-          ParentSubmissionRecordID: version ? prior.SubmissionRecordID : '', CurrentOfficial: false
-        };
-        fields._row = append(ss, 'Submissions', fields);
-        attachments.forEach(function (f) {
-          append(ss, 'SubmissionFiles', {
-            SubmissionRecordID: recordId, FileRecordID: uid(), SourceType: 'driveFile',
-            DriveFileID: text(f.id), FileName: text(f.title) || 'Drive file',
-            MimeType: text(f.mimeType), AlternateLink: text(f.alternateLink),
-            ThumbnailUrl: text(f.thumbnailUrl), EligibleForAI: DriveService.isEligibleForAi(text(f.mimeType)),
-            AIReviewStatus: 'Pending', CreatedAt: now()
-          });
+        if (!uidString || seen[uidString]) continue;
+        seen[uidString] = true;
+        var versions = before.filter(function (r) {
+          return text(r.ClassroomCourseID) === text(cfg.CourseID) && text(r.ClassroomCourseWorkID) === text(cfg.CourseWorkID) && text(r.StudentUserID) === uidString;
         });
-        if (version) patch(ss, 'Submissions', prior._row, { CurrentOfficial: false });
-        patch(ss, 'Submissions', fields._row, { CurrentOfficial: true });
-        fields.CurrentOfficial = true;
-        before.push(fields); // avoid double rows when Classroom repeats a user
-        if (version) stats.newVersions++; else stats.newCount++;
-        event(ss, recordId, '', version ? 'ClassroomReassessmentImported' : 'ClassroomImported',
-          {}, { courseWorkId: text(cfg.CourseWorkID), parentId: version ? prior.SubmissionRecordID : '', fileIds: fileIds },
-          WebAccess.requireTeacher(), 'Classroom evidence imported; grades unchanged.');
+        var prior = versions.filter(isCurrent)[0] || versions.sort(function (a, b) { return (Number(b.SubmissionVersion) || 1) - (Number(a.SubmissionVersion) || 1); })[0];
+        var attachments = classroomAttachments(item);
+        var fileIds = attachments.map(function (a) { return a.id; }).sort();
+        var state = text(item.state), updateTime = text(item.updateTime);
+
+        if (!prior) {
+          var identity = null;
+          try { identity = Classroom.UserProfiles.get(uidString); } catch (e) { /* keep the verified ID; never invent a name */ }
+          var name = identity && identity.name && identity.name.fullName || ('Student ' + uidString);
+          var email = identity && identity.emailAddress || '';
+          var match = roster.filter(function (r) {
+            return !!email && yes(r.Active) && text(r.SchoolEmail).trim().toLowerCase() === email.toLowerCase() &&
+              (!text(r.ClassID).trim() || text(r.ClassID).trim() === text(cfg.CourseName).trim());
+          })[0];
+          if (match) name = text(match.PreferredName || match.OfficialName || name);
+          if (email && before.some(function (r) {
+            return text(r.Task) === target.task && !text(r.ClassroomCourseWorkID) && text(r.StudentEmail).toLowerCase() === email.toLowerCase() && isCurrent(r);
+          })) {
+            throw new Error('A manual submission already exists for ' + name + ' in this task. Reconcile it before importing their Classroom work. No duplicate was created.');
+          }
+          var recordId = uid();
+          var fields = {
+            SubmissionRecordID: recordId, ClassroomCourseID: text(cfg.CourseID), ClassroomCourseWorkID: text(cfg.CourseWorkID),
+            ClassroomSubmissionID: text(item.id), StudentUserID: uidString, StudentName: name, StudentEmail: email,
+            Class: text(cfg.CourseName), Task: target.task, SubmissionVersion: 1, SourceType: 'Classroom',
+            ClassroomState: state, TurnedInTime: text(item.creationTime), UpdateTime: updateTime || now(), Late: !!item.late,
+            AttachmentSummary: attachments.length + ' attachment(s)', AttachmentFileIDsJSON: JSON.stringify(fileIds),
+            AttachmentMetadataJSON: JSON.stringify(attachments), Status: 'New', ParentSubmissionRecordID: '', CurrentOfficial: true
+          };
+          fields._row = append(ss, 'Submissions', fields);
+          attachments.forEach(function (f) { appendFileRow(ss, recordId, f); });
+          before.push(fields);
+          stats.newCount++;
+          event(ss, recordId, '', 'ClassroomImported', {}, { courseWorkId: text(cfg.CourseWorkID), fileIds: fileIds }, actor, 'Classroom evidence imported; no grade changed.');
+          continue;
+        }
+
+        var oldIds = parseJson(prior.AttachmentFileIDsJSON, []).map(text).sort();
+        var filesChanged = JSON.stringify(oldIds) !== JSON.stringify(fileIds);
+        var timeChanged = !!updateTime && updateTime !== text(prior.UpdateTime);
+        var status = text(prior.Status);
+        var meta = {};
+        if (state && state !== text(prior.ClassroomState)) meta.ClassroomState = state;
+        if (!!item.late !== yes(prior.Late) && FINAL.indexOf(status) === -1) meta.Late = !!item.late;
+        if (text(item.id) && !text(prior.ClassroomSubmissionID)) meta.ClassroomSubmissionID = text(item.id);
+
+        if (FINAL.indexOf(status) !== -1) {
+          if (filesChanged || timeChanged) {
+            var pending = { fileIds: fileIds, attachments: attachments, state: state, updateTime: updateTime };
+            if (text(prior.PendingEvidenceJSON) !== JSON.stringify(pending)) {
+              meta.PendingEvidenceJSON = JSON.stringify(pending);
+              meta.EvidenceChangedAt = now();
+              patch(ss, 'Submissions', prior._row, meta);
+              event(ss, text(prior.SubmissionRecordID), '', 'EvidenceUpdatedAfterApproval', { fileIds: oldIds }, { fileIds: fileIds, updateTime: updateTime }, actor,
+                'New Classroom evidence arrived after approval. The approved result is unchanged; start a reassessment to use it.');
+              stats.heldForApproved++;
+              continue;
+            }
+          }
+          if (Object.keys(meta).length) patch(ss, 'Submissions', prior._row, meta);
+          stats.unchanged++;
+          continue;
+        }
+
+        if (filesChanged) {
+          var priorId = text(prior.SubmissionRecordID);
+          files.filter(function (f) { return text(f.SubmissionRecordID) === priorId && text(f.AIReviewStatus) !== 'Removed'; }).forEach(function (f) {
+            var key = text(f.SourceType) === 'driveFile' || !text(f.SourceType) ? text(f.DriveFileID) : null;
+            var stillThere = attachments.some(function (a) { return a.id === key || (a.kind !== 'driveFile' && text(a.alternateLink) === text(f.AlternateLink)); });
+            if (!stillThere) patch(ss, 'SubmissionFiles', f._row, { AIReviewStatus: 'Removed', Limitations: 'Removed from the Classroom submission on ' + now().slice(0, 10) + '.' });
+          });
+          attachments.filter(function (a) { return oldIds.indexOf(a.id) === -1; }).forEach(function (a) { appendFileRow(ss, priorId, a); });
+          meta.AttachmentFileIDsJSON = JSON.stringify(fileIds);
+          meta.AttachmentMetadataJSON = JSON.stringify(attachments);
+          meta.AttachmentSummary = attachments.length + ' attachment(s)';
+        }
+        if (filesChanged || timeChanged) {
+          meta.UpdateTime = updateTime || now();
+          if (status === 'InReview') meta.EvidenceChangedAt = now();
+          patch(ss, 'Submissions', prior._row, meta);
+          event(ss, text(prior.SubmissionRecordID), '', 'ClassroomEvidenceUpdated', { fileIds: oldIds }, { fileIds: fileIds, updateTime: updateTime }, actor,
+            status === 'InReview' ? 'Evidence changed after the draft was saved; the draft was kept for review.' : 'Evidence refreshed from Classroom.');
+          stats.updated++;
+        } else {
+          if (Object.keys(meta).length) patch(ss, 'Submissions', prior._row, meta);
+          stats.unchanged++;
+        }
       }
-      return { success: true, message: 'Imported ' + stats.newCount + ' new; ' + stats.newVersions + ' reassessment versions; ' + stats.unchanged + ' unchanged. No grades changed.', stats: stats };
-    } finally { lock.releaseLock(); }
+      var msg = 'Synced ' + stats.total + ' Classroom submission(s): ' + stats.newCount + ' new, ' + stats.updated + ' updated, ' +
+        stats.heldForApproved + ' held for approved work, ' + stats.unchanged + ' unchanged. No marks changed.';
+      return { success: true, message: msg, stats: stats };
+    });
   }
 
   /* Whole-class drafting goes through the queue so it survives outages and
@@ -1230,47 +1299,43 @@ var WebGrading = (function () {
     };
   }
 
+  /* Writes the task's current results to ClassTracking. Course code, year and
+     stage come from the workbook; the student key is the real StudentUserID. (F27) */
   function syncClassTable(workbookId, taskName, classMeta) {
     var target = openTask(workbookId, taskName);
     var ss = target.ss;
+    var actor = WebAccess.requireTeacher();
     ensureSheet(ss, 'ClassTracking', HEADERS.ClassTracking);
-    var data = getClassTableData(workbookId, taskName).rows;
     var meta = classMeta || {};
-    var year = meta.year || '2026';
-    var stage = meta.stage || 'Stage 5';
-    var course = meta.courseCode || '7TECHI';
-    var classId = meta.className || '7TECHI';
-    var termPair = meta.termPair || 'Terms 1 & 2';
-
-    var lock = LockService.getScriptLock();
-    lock.waitLock(10000);
-    try {
+    var parsed = EvaluationRegister.parseWorkbookName(ss.getName());
+    var subs = records(ss, 'Submissions').filter(function (r) { return text(r.Task).trim() === target.task && isCurrent(r); });
+    var grades = records(ss, 'ApprovedGrades').filter(function (r) { return text(r.TaskName).trim() === target.task; });
+    var links = records(ss, 'ClassroomConfig').filter(function (r) { return text(r.TaskName) === target.task; });
+    var className = text(meta.className).trim() || text((links[links.length - 1] || {}).CourseName) || text((subs[0] || {}).Class);
+    var termPair = text(meta.termPair).trim().slice(0, 40);
+    return withLock(function () {
       var existing = records(ss, 'ClassTracking');
-      var updated = 0;
-      var added = 0;
-      for (var i = 0; i < data.length; i++) {
-        var d = data[i];
+      var updated = 0, added = 0;
+      subs.forEach(function (s) {
+        var g = grades.filter(function (r) { return text(r.SubmissionRecordID) === text(s.SubmissionRecordID); })[0];
+        var studentKey = text(s.StudentUserID) || text(s.SubmissionRecordID);
         var prior = existing.filter(function (r) {
-          return text(r.StudentUserID) === d.submissionRecordId && text(r.TaskName) === target.task;
+          return text(r.TaskName) === target.task && (text(r.StudentUserID) === studentKey || text(r.StudentUserID) === text(s.SubmissionRecordID));
         })[0];
         var fields = {
-          TrackingID: prior ? prior.TrackingID : uid(),
-          Year: year, Stage: stage, CourseCode: course, ClassID: classId, TermPair: termPair,
-          StudentUserID: d.submissionRecordId, StudentName: d.studentName, TaskName: target.task,
-          AssessmentType: d.assessmentType, RawScore: d.rawScore != null ? d.rawScore : '',
-          FinalScore: d.finalScore != null ? d.finalScore : '', MaxMarks: 100, Percent: d.percent != null ? d.percent : '',
-          Grade: d.grade, OutcomesJSON: '', Status: d.status, UpdatedAt: now()
+          TrackingID: prior ? prior.TrackingID : uid(), Year: parsed.year, Stage: deriveStageFromCourseCode(parsed.courseCode) || '',
+          CourseCode: parsed.courseCode, ClassID: className, TermPair: termPair || (prior ? text(prior.TermPair) : ''),
+          StudentUserID: studentKey, StudentName: text(s.StudentName), TaskName: target.task,
+          AssessmentType: text(s.AssessmentType) || (g && text(g.AssessmentType)) || 'Summative',
+          RawScore: g ? g.RawScore : '', FinalScore: g ? (g.FinalScore !== '' ? g.FinalScore : g.Points) : '',
+          MaxMarks: g ? g.MaxMarks : '', Percent: g ? g.Percent : '', Grade: g ? text(g.Grade) : 'Not approved',
+          OutcomesJSON: g ? text(g.OutcomesJSON) : '', Status: text(s.Status), UpdatedAt: now()
         };
-        if (prior) {
-          patch(ss, 'ClassTracking', prior._row, fields);
-          updated++;
-        } else {
-          append(ss, 'ClassTracking', fields);
-          added++;
-        }
-      }
-      return { success: true, message: 'Class tracking synced: ' + added + ' added, ' + updated + ' updated.' };
-    } finally { lock.releaseLock(); }
+        if (prior) { patch(ss, 'ClassTracking', prior._row, fields); updated++; }
+        else { append(ss, 'ClassTracking', fields); existing.push(fields); added++; }
+      });
+      return { success: true, message: 'Class tracking synced by ' + actor + ': ' + added + ' added, ' + updated + ' updated.' };
+    });
   }
 
   return {

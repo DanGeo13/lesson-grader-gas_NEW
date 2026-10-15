@@ -23,6 +23,7 @@ function setup() {
     WebAccess:{requireTeacher:()=> 'dan@school.edu.au',canUnlock:(e)=>mocks.unlockers.includes(e),providerStatus:()=>({})},
     unlockers:[],
     LessonGraderWeb:{open:(wb)=> {assert.equal(wb,ss.id);return ss;},taskNames:()=>['Rube Goldberg','Water Filter'],isSharedRubric:()=>true},
+    deriveStageFromCourseCode:(c)=>/^(9|10)/.test(c)?'Stage 5':/^(7|8)/.test(c)?'Stage 4':null,
     DriveService:{isEligibleForAi:(mime)=>mime === 'application/pdf'},
     // Drive fake: registered files are readable; anything else behaves like a backup source.
     DriveApp:{getFileById:(fid)=>driveFiles[fid] || ({makeCopy:()=>({getId:()=> 'backup-1'})})},
@@ -110,29 +111,93 @@ test('cannot activate a malformed/unreviewed rubric and cannot grade unknown che
   assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].Status,'New');
 });
 
-test('task-scoped import keeps two assignments with same student separate and versions changed files',()=>{
+function classroomFake(g,payload,profiles){
+  g.Classroom={Courses:{CourseWork:{StudentSubmissions:{list:(_,work,params)=>{
+    const all=payload[work]||[];
+    // two pages to prove pagination is followed
+    if(!params.pageToken) return {studentSubmissions:all.slice(0,1),nextPageToken:all.length>1?'p2':undefined};
+    return {studentSubmissions:all.slice(1)};
+  }}}},UserProfiles:{get:(id)=>profiles[id]}};
+}
+function linkTask(ss,task,work,due){
+  ss.getSheetByName('ClassroomConfig').appendRow(['cfg-'+work,'COURSE-1','7TECHI','',work,task,100,'','',true,task,due||'',false]);
+}
+
+test('task-scoped sync keeps assignments separate, follows pagination and is idempotent over repeated runs (SC07, SC11)',()=>{
   const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
-  const config=ss.getSheetByName('ClassroomConfig');
-  config.appendRow(['cfg1','COURSE-1','7TECHI','','WORK-1','Rube Goldberg',100,'','',true,'Rube Goldberg','','']);
-  config.appendRow(['cfg2','COURSE-1','7TECHI','','WORK-2','Water Filter',100,'','',true,'Water Filter','','']);
+  linkTask(ss,'Rube Goldberg','WORK-1');linkTask(ss,'Water Filter','WORK-2');
   const payload={
-    'WORK-1':[ {id:'CLASS-SUB-1',userId:'STU-2',state:'TURNED_IN',assignmentSubmission:{attachments:[{driveFile:{id:'FILE-A',title:'folio.pdf',mimeType:'application/pdf',alternateLink:'https://drive.google.com/a'}}]}} ],
-    'WORK-2':[ {id:'CLASS-SUB-2',userId:'STU-2',state:'TURNED_IN',assignmentSubmission:{attachments:[{driveFile:{id:'FILE-B',title:'prototype.pdf',mimeType:'application/pdf',alternateLink:'https://drive.google.com/b'}}]}} ]
+    'WORK-1':[{id:'CS-1',userId:'STU-2',state:'TURNED_IN',updateTime:'2026-10-01T00:00:00Z',assignmentSubmission:{attachments:[{driveFile:{id:'FILE-A',title:'folio.pdf',mimeType:'application/pdf',alternateLink:'https://drive.google.com/a'}}]}},
+              {id:'CS-2',userId:'STU-3',state:'TURNED_IN',updateTime:'2026-10-01T00:00:00Z',assignmentSubmission:{attachments:[{link:{url:'https://example.org/site',title:'My site'}}]}}],
+    'WORK-2':[{id:'CS-3',userId:'STU-2',state:'TURNED_IN',assignmentSubmission:{attachments:[{driveFile:{id:'FILE-B',title:'prototype.pdf',mimeType:'application/pdf'}}]}}]
   };
-  g.Classroom={Courses:{CourseWork:{StudentSubmissions:{list:(_,work)=>({studentSubmissions:payload[work]})}}},UserProfiles:{get:()=>({name:{fullName:'Rory Smith'},emailAddress:'rory@school.edu.au'})}};
-  assert.equal(W.importTask(ss.id,'Rube Goldberg').stats.newCount,1);
+  // Two students with near-identical names: identity is the Classroom user ID, never the name.
+  classroomFake(g,payload,{'STU-2':{name:{fullName:'Rory Smith'},emailAddress:'rory.smith@school.edu.au'},'STU-3':{name:{fullName:'Rory Smith'},emailAddress:'rory.smith2@school.edu.au'}});
+  assert.equal(W.importTask(ss.id,'Rube Goldberg').stats.newCount,2);
   assert.equal(W.importTask(ss.id,'Water Filter').stats.newCount,1);
-  let all=objectRows(ss.getSheetByName('Submissions')).filter(s=>s.StudentUserID==='STU-2');
-  assert.equal(all.length,2);
-  assert.deepEqual(all.map(r=>r.Task).sort(),['Rube Goldberg','Water Filter']);
-  assert.equal(W.importTask(ss.id,'Rube Goldberg').stats.unchanged,1);
-  payload['WORK-1'][0].assignmentSubmission.attachments[0].driveFile.id='FILE-C';
-  assert.equal(W.importTask(ss.id,'Rube Goldberg').stats.newVersions,1);
-  all=objectRows(ss.getSheetByName('Submissions')).filter(s=>s.StudentUserID==='STU-2');
-  const other=all.find(s=>s.Task==='Water Filter');
+  const count=()=>[objectRows(ss.getSheetByName('Submissions')).length,objectRows(ss.getSheetByName('SubmissionFiles')).length,objectRows(ss.getSheetByName('AssessmentHistory')).length];
+  const baseline=JSON.stringify(count());
+  for(let i=0;i<3;i++){ const r=W.importTask(ss.id,'Rube Goldberg'); assert.equal(r.stats.unchanged,2); }
+  assert.equal(JSON.stringify(count()),baseline,'three unchanged syncs add no rows');
+  const rubeRows=objectRows(ss.getSheetByName('Submissions')).filter(s=>s.ClassroomCourseWorkID==='WORK-1');
+  assert.deepEqual(rubeRows.map(r=>r.StudentUserID).sort(),['STU-2','STU-3']);
+  assert.equal(rubeRows.filter(r=>r.StudentName==='Rory Smith').length,2);
+  const linkFile=objectRows(ss.getSheetByName('SubmissionFiles')).find(f=>f.SourceType==='link');
+  assert.equal(linkFile.AIReviewStatus,'Unsupported','linked content is disclosed as not readable');
+  const other=objectRows(ss.getSheetByName('Submissions')).find(s=>s.Task==='Water Filter');
   assert.equal(other.AttachmentFileIDsJSON,'["FILE-B"]');
-  assert.equal(all.filter(s=>s.Task==='Rube Goldberg' && s.CurrentOfficial===true).length,1);
-  assert.equal(all.filter(s=>s.Task==='Rube Goldberg' && s.CurrentOfficial===false).length,1);
+});
+
+test('sync keeps teacher drafts, flags changed evidence, and never displaces an approved result (SC12, SC26)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  linkTask(ss,'Rube Goldberg','WORK-1');
+  const att=id=>({driveFile:{id,title:id+'.pdf',mimeType:'application/pdf'}});
+  const payload={'WORK-1':[{id:'CS-1',userId:'STU-9',state:'TURNED_IN',updateTime:'t1',assignmentSubmission:{attachments:[att('F1')]}},
+                           {id:'CS-2',userId:'STU-8',state:'TURNED_IN',updateTime:'t1',assignmentSubmission:{attachments:[att('G1')]}}]};
+  classroomFake(g,payload,{'STU-9':{name:{fullName:'Ava Chen'}},'STU-8':{name:{fullName:'Noah Wilson'}}});
+  W.importTask(ss.id,'Rube Goldberg');
+  const subs=()=>objectRows(ss.getSheetByName('Submissions'));
+  const ava=subs().find(s=>s.StudentUserID==='STU-9').SubmissionRecordID;
+  const noah=subs().find(s=>s.StudentUserID==='STU-8').SubmissionRecordID;
+  // Ava: teacher draft. Noah: approved.
+  const dA=W.saveDraft(ss.id,'Rube Goldberg',ava,{C01:{checkboxes:{'C01-A-1':true},teacherWrittenNote:'Strong research'},C02:{checkboxes:{'C02-A-1':true}}},{},W.detail(ss.id,'Rube Goldberg',ava).data.revision,'Teacher');
+  const dN=W.saveDraft(ss.id,'Rube Goldberg',noah,{C01:{checkboxes:{'C01-B-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{},W.detail(ss.id,'Rube Goldberg',noah).data.revision,'Teacher');
+  W.approve(ss.id,'Rube Goldberg',noah,dN.revision);
+  const approvedBefore=JSON.stringify(objectRows(ss.getSheetByName('ApprovedGrades')));
+  // Both students resubmit new files.
+  payload['WORK-1'][0].assignmentSubmission.attachments=[att('F1'),att('F2')];payload['WORK-1'][0].updateTime='t2';
+  payload['WORK-1'][1].assignmentSubmission.attachments=[att('G2')];payload['WORK-1'][1].updateTime='t2';
+  const r=W.importTask(ss.id,'Rube Goldberg');
+  assert.equal(r.stats.updated,1); assert.equal(r.stats.heldForApproved,1);
+  // Draft kept on the same record, evidence updated, advisory flag raised.
+  const avaDetail=W.detail(ss.id,'Rube Goldberg',ava).data;
+  assert.equal(avaDetail.criteriaMap.C01.teacherWrittenNote,'Strong research');
+  assert.equal(avaDetail.attachments.length,2);
+  assert.ok(avaDetail.flags.flags.some(f=>f.code==='EVIDENCE_CHANGED'));
+  // Approved result untouched and still current; new evidence held as pending.
+  const noahRow=subs().find(s=>s.SubmissionRecordID===noah);
+  assert.equal(noahRow.Status,'Approved'); assert.equal(noahRow.CurrentOfficial,true);
+  assert.ok(noahRow.EvidenceChangedAt); assert.ok(noahRow.PendingEvidenceJSON.includes('G2'));
+  assert.equal(JSON.stringify(objectRows(ss.getSheetByName('ApprovedGrades'))),approvedBefore);
+  assert.equal(W.importTask(ss.id,'Rube Goldberg').stats.heldForApproved,0,'pending evidence is not re-recorded');
+  // Deliberate reassessment uses the pending evidence.
+  const re=W.reassess(ss.id,'Rube Goldberg',noah);
+  const files=W.detail(ss.id,'Rube Goldberg',re.submissionRecordId).data.attachments.map(a=>a.driveFileId);
+  assert.equal(files.join(),'G2');
+  assert.equal(subs().find(s=>s.SubmissionRecordID===noah).PendingEvidenceJSON,'');
+});
+
+test('two workbooks stay isolated: reads and writes use only the validated workbook ID (SC05)',()=>{
+  const first=setup();const second=setup();
+  first.g.WebGrading.prepare(first.ss,false);second.g.WebGrading.prepare(second.ss,false);
+  first.g.WebGrading.activateRubric(first.ss.id,'Rube Goldberg','A','',rowsOne(),{},true);
+  // Same shared code, second workbook with a different ID: opening the first ID there must fail.
+  second.ss.id='WORKBOOK'+'1'.repeat(30);
+  assert.throws(()=>second.g.WebGrading.detail(first.ss.id,'Rube Goldberg','SUB-1'));
+  first.g.WebGrading.saveDraft(first.ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{}}},{},'','Teacher');
+  assert.equal(objectRows(first.ss.getSheetByName('CriterionAssessments')).length,2);
+  assert.equal(objectRows(second.ss.getSheetByName('CriterionAssessments')).length,0);
 });
 
 test('enable-grading backup failure stops all sheet migration',()=>{

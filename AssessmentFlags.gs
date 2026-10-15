@@ -17,6 +17,7 @@
  *   AI_UNSUPPORTED_TICKS    AI ticks were discarded because no evidence was cited
  *   TEACHER_CHANGED_AI      final selections differ from the AI proposal
  *   FEEDBACK_EMPTY          no student feedback has been written
+ *   EVIDENCE_CHANGED        Classroom evidence changed after the draft was saved
  *
  * Load-time pure and shared by the browser (mirrored, see tests/flags.test.cjs).
  * ============================================================================ */
@@ -107,6 +108,9 @@ var AssessmentFlags = (function () {
       add('FEEDBACK_NOT_REVIEWED', 'blocking', '', 'Feedback was written before the latest change to selections or notes. Update it, or confirm it still matches.');
     }
     if (!hasText(fb)) add('FEEDBACK_EMPTY', 'advisory', '', 'No student feedback has been written.');
+    if (input.evidenceChangedAt && !input.final) {
+      add('EVIDENCE_CHANGED', 'advisory', '', 'Classroom evidence changed after this draft was saved. Re-check the work before approving.');
+    }
 
     var byCriterion = {};
     flags.forEach(function (f) { if (f.criterionId) (byCriterion[f.criterionId] = byCriterion[f.criterionId] || []).push(f); });

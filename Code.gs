@@ -1452,12 +1452,19 @@ var DriveService = (function() {
 var ClassroomService = (function() {
   function listTeacherCourses() {
     try {
-      var res = Classroom.Courses.list({ teacherId: 'me', courseStates: ['ACTIVE'], pageSize: 50 });
       var courses = [];
-      var raw = res.courses || [];
-      for (var i = 0; i < raw.length; i++) {
-        courses.push({ id: raw[i].id, name: raw[i].name, section: raw[i].section || '', room: raw[i].room || '' });
-      }
+      var pageToken = null;
+      do {
+        var params = { teacherId: 'me', courseStates: ['ACTIVE'], pageSize: 100 };
+        if (pageToken) params.pageToken = pageToken;
+        var res = Classroom.Courses.list(params);
+        var raw = (res && res.courses) || [];
+        for (var i = 0; i < raw.length; i++) {
+          courses.push({ id: raw[i].id, name: raw[i].name, section: raw[i].section || '', room: raw[i].room || '' });
+        }
+        pageToken = res && res.nextPageToken ? res.nextPageToken : null;
+      } while (pageToken);
+      courses.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
       return { success: true, courses: courses };
     } catch (err) {
       Logging.logError('listTeacherCourses', err);

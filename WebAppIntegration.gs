@@ -247,10 +247,18 @@ var LessonGraderWeb = (function () {
         seen[id] = true;
 
         try {
-          if (validWorkbook_(SpreadsheetApp.openById(id))) {
+          var book = SpreadsheetApp.openById(id);
+          if (validWorkbook_(book)) {
+            var parsed = EvaluationRegister.parseWorkbookName(file.getName());
+            var updated = file.getLastUpdated ? file.getLastUpdated() : null;
             result.push({
               id: id,
-              name: file.getName()
+              name: file.getName(),
+              courseCode: parsed.courseCode,
+              year: parsed.year,
+              taskName: parsed.taskName,
+              tasks: taskNames_(book),
+              updatedAt: updated ? updated.toISOString() : ''
             });
           }
         } catch (err) {
@@ -574,7 +582,7 @@ var LessonGraderWeb = (function () {
         return fail_('Assignment does not belong to the selected course.');
       }
 
-      var due = null;
+      var due = '';
 
       if (coursework.dueDate) {
         if (
@@ -584,20 +592,7 @@ var LessonGraderWeb = (function () {
         ) {
           return fail_('Assignment has an invalid due date.');
         }
-
-        var time = coursework.dueTime || {};
-
-        due = new Date(Date.UTC(
-          coursework.dueDate.year,
-          coursework.dueDate.month - 1,
-          coursework.dueDate.day,
-          time.hours === undefined ? 23 : time.hours,
-          time.minutes === undefined ? 59 : time.minutes
-        ));
-
-        if (isNaN(due.getTime())) {
-          return fail_('Invalid Classroom due date.');
-        }
+        due = SyncService.classroomDueIso(coursework.dueDate, coursework.dueTime);
       }
 
       var sheet = ss.getSheetByName(Config.SHEET_CLASSROOM_CONFIG);
@@ -644,20 +639,21 @@ var LessonGraderWeb = (function () {
         Session.getEffectiveUser().getEmail() || '';
       row[columns.Active] = true;
       row[columns.TaskName] = task;
-      row[columns.DueDate] = due ? due.toISOString() : '';
+      row[columns.DueDate] = due;
       row[columns.AutoImported] = false;
 
       sheet.appendRow(row);
 
       var message = due
-        ? 'Linked “' + (coursework.title || 'Untitled assignment') +
-          '” to “' + task +
-          '”. Hourly auto-import trigger must be configured separately.'
-        : 'Assignment linked; automatic due-date import is unavailable. Manual import has not been verified.';
+        ? 'Linked “' + (coursework.title || 'Untitled assignment') + '” to “' + task +
+          '”. It will sync automatically every hour after the due date once the sync trigger is installed (Settings). "Sync now" works at any time.'
+        : 'Linked “' + (coursework.title || 'Untitled assignment') + '” to “' + task +
+          '”. It has no due date, so it syncs only when you press "Sync now".';
 
       return {
         success: true,
-        message: message
+        message: message,
+        data: { dueDate: due, maxPoints: coursework.maxPoints == null ? 0 : coursework.maxPoints }
       };
     } catch (err) {
       console.error('Web Classroom link: ' + err);
