@@ -65,4 +65,11 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'appsscript.json'), 
 if (manifest.runtimeVersion !== 'V8' || !(manifest.dependencies?.enabledAdvancedServices || []).some(service => service.userSymbol === 'Classroom')) {
   throw new Error('Apps Script manifest must declare V8 and the Classroom advanced service.');
 }
-console.log('✓ manifest parses with Classroom service');
+const scopes = manifest.oauthScopes || [];
+for (const scope of ['spreadsheets', 'drive', 'documents', 'script.external_request', 'script.scriptapp', 'classroom.coursework.students']) {
+  if (!scopes.some(s => s.endsWith('/auth/' + scope))) throw new Error('Manifest must declare the ' + scope + ' OAuth scope explicitly.');
+}
+if (!manifest.webapp || manifest.webapp.executeAs !== 'USER_ACCESSING' || manifest.webapp.access === 'ANYONE_ANONYMOUS') {
+  throw new Error('Web app must execute as the accessing user and never allow anonymous access.');
+}
+console.log('✓ manifest parses with Classroom service, explicit scopes and a safe web app model');

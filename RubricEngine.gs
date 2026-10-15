@@ -460,6 +460,20 @@ var RubricEngine = (function () {
     return { ok: errors.length === 0, errors: errors };
   }
 
+  /** Flattens a profile back to editable rubric rows (one per observable). Pure. */
+  function profileToRows(profile) {
+    var rows = [];
+    ((profile && profile.criteria) || []).forEach(function (c) {
+      c.bandOrder.forEach(function (band) {
+        (c.bands[band] || []).forEach(function (o) {
+          rows.push({ criterion: c.title, part: c.part || '', section: c.section || '', maxMarks: c.maxMarks, outcome: c.outcome || '',
+            band: band, description: o.text, weight: c.bandWeights ? c.bandWeights[band] : '' });
+        });
+      });
+    });
+    return rows;
+  }
+
   function profileSummary(profile) {
     if (!profile) return null;
     var observableCount = 0;
@@ -1287,6 +1301,7 @@ var RubricEngine = (function () {
     profileFromCriteriaConfigRows: profileFromCriteriaConfigRows,
     validateProfile: validateProfile,
     profileSummary: profileSummary,
+    profileToRows: profileToRows,
     scoreCriterion: scoreCriterion,
     scoreProfile: scoreProfile,
     serializeForAi: serializeForAi,

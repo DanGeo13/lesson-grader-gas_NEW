@@ -2,52 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { context, Workbook, objectRows } = require('./helpers.cjs');
 
-function setup() {
-  const ss = new Workbook();
-  ss.add('Rube Goldberg',[['Task']]);
-  ss.add('Water Filter',[['Task']]);
-  // Two web-app-era tables: only minimal headers. prepare() must add missing
-  // headers without destroying these rows or changing their existing order.
-  ss.add('Submissions',[
-    ['SubmissionRecordID','StudentUserID','Status','Task','StudentName','SubmissionVersion','CurrentOfficial'],
-    ['SUB-1','STU-1','New','Rube Goldberg','Mia Taylor',1,true]
-  ]);
-  ss.add('ClassroomConfig',[['ConfigID','CourseID','CourseName','CourseSection','CourseWorkID','AssignmentTitle','MaxPoints','SavedAt','SavedBy','Active','TaskName','DueDate','AutoImported']]);
-  ss.add('RubricProfiles',[['ProfileID','ProfileName','JSONDefinition','CreatedAt']]);
-  let id=1;
-  const props={};
-  const driveFiles={};
-  const mocks={
-    SpreadsheetApp:{flush(){}},
-    LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
-    WebAccess:{requireTeacher:()=> 'dan@school.edu.au',canUnlock:(e)=>mocks.unlockers.includes(e),providerStatus:()=>({})},
-    unlockers:[],
-    LessonGraderWeb:{open:(wb)=> {assert.equal(wb,ss.id);return ss;},taskNames:()=>['Rube Goldberg','Water Filter'],isSharedRubric:()=>true},
-    deriveStageFromCourseCode:(c)=>/^(9|10)/.test(c)?'Stage 5':/^(7|8)/.test(c)?'Stage 4':null,
-    DriveService:{isEligibleForAi:(mime)=>mime === 'application/pdf'},
-    // Drive fake: registered files are readable; anything else behaves like a backup source.
-    DriveApp:{getFileById:(fid)=>driveFiles[fid] || ({makeCopy:()=>({getId:()=> 'backup-1'})})},
-    driveFiles,
-    MimeType:{GOOGLE_DOCS:'application/vnd.google-apps.document'},
-    PropertiesService:{getScriptProperties:()=>({getProperty:k=>props[k]||null,setProperty:(k,v)=>{props[k]=v;},deleteProperty:k=>{delete props[k];}})},
-    props,
-    Utilities:{getUuid:()=>`id-${id++}`,formatDate:(d)=>d.toISOString().slice(0,10),base64Encode:()=> 'dGVzdA=='}
-  };
-  const g=context(mocks).load('AppConfig.gs','RubricEngine.gs','AssessmentFlags.gs','Deidentify.gs','EvidenceService.gs','PromptRegistry.gs','AiGateway.gs','AiQueue.gs','WebGrading.gs','EvaluationRegister.gs');
-  return {g,ss};
-}
-/* Registers a readable Drive file and its SubmissionFiles row. */
-function addFile(g,ss,subId,fileId,name,mime,content){
-  g.driveFiles[fileId]={getMimeType:()=>mime,getSize:()=>100,getBlob:()=>({getBytes:()=>[1,2,3],getContentType:()=>mime}),
-    getAs:()=>({getBytes:()=>[1],getDataAsString:()=>content||''})};
-  const sh=ss.getSheetByName('SubmissionFiles');
-  sh.appendRow(sh.rows[0].map(key=>({SubmissionRecordID:subId,FileRecordID:'FR-'+fileId,DriveFileID:fileId,FileName:name,MimeType:mime,AIReviewStatus:'Pending'})[key]??''));
-}
-function rowsOne() {return [
-  {criterion:'Research',part:'Process',maxMarks:10,band:'A',description:'Evidence of independent research'},
-  {criterion:'Research',part:'Process',maxMarks:10,band:'B',description:'Some relevant research'},
-  {criterion:'Making',part:'Practical',maxMarks:15,band:'A',description:'Working prototype'}
-];}
+const { setup, addFile, rowsOne, classroomFake, linkTask } = require('./env.cjs');
 
 test('web workflow: prepare, activate own rubric, draft, approve, lock, reassess, pin version',()=>{
   const {g,ss}=setup();const W=g.WebGrading;
@@ -110,18 +65,6 @@ test('cannot activate a malformed/unreviewed rubric and cannot grade unknown che
   assert.throws(()=>W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-FAKE':true}}}, {},'','Teacher'),/Unknown observable/);
   assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].Status,'New');
 });
-
-function classroomFake(g,payload,profiles){
-  g.Classroom={Courses:{CourseWork:{StudentSubmissions:{list:(_,work,params)=>{
-    const all=payload[work]||[];
-    // two pages to prove pagination is followed
-    if(!params.pageToken) return {studentSubmissions:all.slice(0,1),nextPageToken:all.length>1?'p2':undefined};
-    return {studentSubmissions:all.slice(1)};
-  }}}},UserProfiles:{get:(id)=>profiles[id]}};
-}
-function linkTask(ss,task,work,due){
-  ss.getSheetByName('ClassroomConfig').appendRow(['cfg-'+work,'COURSE-1','7TECHI','',work,task,100,'','',true,task,due||'',false]);
-}
 
 test('task-scoped sync keeps assignments separate, follows pagination and is idempotent over repeated runs (SC07, SC11)',()=>{
   const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
@@ -638,4 +581,49 @@ test('R10 reassessment keeps the earlier approval and reports what changed (SC42
   assert.equal(JSON.stringify(grades[0]),snapshotBefore,'v1 snapshot untouched');
   const v1row=objectRows(ss.getSheetByName('Submissions')).find(s=>s.SubmissionRecordID==='SUB-1');
   assert.equal(v1row.Status,'Approved'); assert.equal(v1row.CurrentOfficial,false);
+});
+
+test('rubric round-trips between the app and the workbook RubricRows sheet (SC13, SC14)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  const source=[...rowsOne(),{criterion:'Making',part:'Practical',maxMarks:15,band:'C',description:'Partly working prototype',outcome:'DT5-5'}];
+  W.activateRubric(ss.id,'Rube Goldberg','Rube v1','',source,{},true);
+  let src=W.rubricSource(ss.id,'Rube Goldberg').data;
+  // Every loaded field matches the source rows.
+  assert.equal(src.activeRows.length,source.length);
+  source.forEach((r,i)=>{
+    const a=src.activeRows[i];
+    assert.equal(a.criterion,r.criterion); assert.equal(a.band,r.band); assert.equal(a.description,r.description);
+    assert.equal(Number(a.maxMarks),r.maxMarks);
+  });
+  assert.equal(src.profile.criteria[1].bandWeights.C,0.7);
+  assert.equal(src.drift,false);
+  const mirror=objectRows(ss.getSheetByName('RubricRows'));
+  assert.equal(mirror.length,source.length);
+  // Teacher edits the workbook sheet: new wording and different marks.
+  const sh=ss.getSheetByName('RubricRows');const h=sh.rows[0];
+  sh.rows[1][h.indexOf('Description')]='Evaluates independent research';
+  sh.rows.slice(1).forEach(r=>{ if(r[h.indexOf('Criterion')]==='Research') r[h.indexOf('MaxMarks')]=12; });
+  src=W.rubricSource(ss.id,'Rube Goldberg').data;
+  assert.equal(src.drift,true);
+  const draft=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{},'','Teacher');
+  const pinned=W.detail(ss.id,'Rube Goldberg','SUB-1').data.profile.profileId;
+  W.activateRubric(ss.id,'Rube Goldberg','Rube v2 (from workbook)','',src.sheetRows,{},true);
+  src=W.rubricSource(ss.id,'Rube Goldberg').data;
+  assert.equal(src.drift,false);
+  assert.equal(src.summary.totalMaxMarks,27);
+  assert.equal(src.profile.criteria[0].bands.A[0].text,'Evaluates independent research');
+  assert.equal(src.versions.length,2);
+  assert.equal(W.detail(ss.id,'Rube Goldberg','SUB-1').data.profile.profileId,pinned,'existing draft keeps its rubric version');
+  assert.ok(draft.success);
+});
+
+test('feedback can be rebuilt from unsaved on-screen selections without writing anything',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  const before=JSON.stringify(ss.getSheetByName('AssessmentHistory').rows);
+  const res=W.buildFeedback(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-B-1':true},teacherWrittenNote:'great interview notes'},C02:{checkboxes:{}}},'');
+  assert.match(res.data.whatWentWell,/Some relevant research/);
+  assert.match(res.data.whatWentWell,/great interview notes/i);
+  assert.match(res.data.areasForImprovement,/Evidence of independent research/i);
+  assert.equal(JSON.stringify(ss.getSheetByName('AssessmentHistory').rows),before);
 });

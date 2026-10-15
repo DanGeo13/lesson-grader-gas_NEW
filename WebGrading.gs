@@ -27,6 +27,10 @@ var WebGrading = (function () {
     SubmissionFiles: ['EvidenceStatusUpdatedAt']
   };
   var FINAL = ['Approved', 'Locked', 'Superseded'];
+  /* Human-editable mirror of each task's ACTIVE rubric (one row per observable).
+     Teachers may edit it in Sheets; the app shows the difference and activates
+     the edited rows as a new version only when the teacher confirms. (SC14) */
+  var RUBRIC_ROWS = ['TaskName', 'Criterion', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'Description', 'BandWeight', 'ProfileID', 'SyncedAt'];
 
   function fail(message) { return { success: false, message: message }; }
   function uid() { return Utilities.getUuid(); }
@@ -505,6 +509,19 @@ var WebGrading = (function () {
     });
   }
 
+  /* Grounded feedback from the on-screen (possibly unsaved) selections. Writes nothing. */
+  function buildFeedback(workbookId, taskName, submissionId, incoming, generalObservation) {
+    var target = openTask(workbookId, taskName);
+    var sub = selectSubmission(target.ss, target.task, submissionId);
+    var a = assess(target.ss, target.task, sub);
+    if (!a.profile) throw new Error('No rubric is active for this task.');
+    var clean = validateChecks(a.profile, incoming || a.states);
+    var scores = RubricEngine.scoreProfile(a.profile, clean);
+    var built = FeedbackBuilder.build(a.profile, clean, scores, { generalObservation: generalObservation });
+    return { success: true, data: built, message: 'Feedback rebuilt from ' + built.sources.ticked + ' ticked observable(s), ' + built.sources.targets +
+      ' next-step target(s) and ' + built.sources.notes + ' teacher observation(s). Edit it before saving.' };
+  }
+
   /* ---- approval, lock, unlock, reassessment ------------------------------ */
 
   function approve(workbookId, taskName, submissionId, expectedRevision, options) {
@@ -721,13 +738,54 @@ var WebGrading = (function () {
     });
     var validation = RubricEngine.validateProfile(profile);
     if (!validation.ok) throw new Error(validation.errors.join(' '));
-    var lock = LockService.getScriptLock();
-    lock.waitLock(10000);
-    try {
-      var saved = RubricEngine.saveProfile(target.ss, profile, WebAccess.requireTeacher());
+    var actor = WebAccess.requireTeacher();
+    return withLock(function () {
+      var saved = RubricEngine.saveProfile(target.ss, profile, actor);
       if (!saved.success) throw new Error(saved.message);
-      return { success: true, message: 'Rubric activated for ' + target.task + '. Existing assessments remain pinned to their original rubric.', data: saved.summary };
-    } finally { lock.releaseLock(); }
+      writeRubricMirror(target.ss, target.task, saved.profile);
+      return { success: true, message: 'Rubric activated for ' + target.task + ' and copied to the RubricRows sheet. Existing assessments remain pinned to their original rubric.', data: saved.summary };
+    });
+  }
+
+  function writeRubricMirror(ss, task, profile) {
+    var sheet = ensureSheet(ss, 'RubricRows', RUBRIC_ROWS);
+    var data = sheet.getDataRange().getValues();
+    var header = data[0].map(function (h) { return text(h).trim(); });
+    var ti = header.indexOf('TaskName');
+    var keep = data.slice(1).filter(function (r) { return text(r[ti]).trim() !== task && r.join('') !== ''; });
+    var stamp = now();
+    var fresh = RubricEngine.profileToRows(profile).map(function (r) {
+      var v = { TaskName: task, Criterion: r.criterion, Part: r.part, Section: r.section, MaxMarks: r.maxMarks, Outcome: r.outcome,
+        Band: r.band, Description: r.description, BandWeight: r.weight, ProfileID: profile.profileId, SyncedAt: stamp };
+      return header.map(function (h) { return v[h] === undefined ? '' : v[h]; });
+    });
+    var all = [header].concat(keep, fresh);
+    sheet.clearContents();
+    sheet.getRange(1, 1, all.length, header.length).setValues(all);
+  }
+
+  function rowKey(r) {
+    return [text(r.criterion).trim(), text(r.part).trim(), text(r.section).trim(), toNumber(r.maxMarks), text(r.outcome).trim(),
+      text(r.band).trim().toUpperCase(), text(r.description).trim(), r.weight === '' || r.weight == null ? '' : toNumber(r.weight)];
+  }
+
+  /** Active rubric vs the workbook's RubricRows sheet for one task (SC13, SC14). */
+  function rubricSource(workbookId, taskName) {
+    var target = openTask(workbookId, taskName);
+    var ss = target.ss;
+    var profile = RubricEngine.getActiveProfile(ss, target.task);
+    var activeRows = profile ? RubricEngine.profileToRows(profile) : [];
+    var sheetRows = ss.getSheetByName('RubricRows') ? records(ss, 'RubricRows').filter(function (r) { return text(r.TaskName).trim() === target.task && text(r.Criterion).trim(); }).map(function (r) {
+      return { criterion: text(r.Criterion), part: text(r.Part), section: text(r.Section), maxMarks: r.MaxMarks, outcome: text(r.Outcome),
+        band: text(r.Band), description: text(r.Description), weight: r.BandWeight };
+    }) : [];
+    var drift = !!profile && sheetRows.length > 0 && AssessmentFlags.canonical(activeRows.map(rowKey)) !== AssessmentFlags.canonical(sheetRows.map(rowKey));
+    var versions = RubricEngine.readProfiles(ss).filter(function (p) { return text(p.row.TaskName) === target.task; }).map(function (p) {
+      return { profileId: text(p.row.ProfileID), name: text(p.row.ProfileName), createdAt: text(p.row.CreatedAt), createdBy: text(p.row.CreatedBy), active: yes(p.row.Active) };
+    });
+    return { success: true, data: { profile: profile, summary: RubricEngine.profileSummary(profile), activeRows: activeRows,
+      sheetRows: sheetRows, drift: drift, versions: versions, gradeScale: RubricEngine.getGradeScale(ss),
+      referencePoints: RubricEngine.referencePointReport(RubricEngine.getGradeScale(ss).weights) } };
   }
 
   /* AI drafting lives in AiGateway.gs (provider calls, evidence validation,
@@ -1340,9 +1398,9 @@ var WebGrading = (function () {
 
   return {
     HEADERS: HEADERS, EXTRA: EXTRA, prepare: prepare, upgrade: upgrade, ready: ready, listTask: listTask, detail: detail,
-    saveDraft: saveDraft, approve: approve, lockAssessment: lockAssessment, unlock: unlock,
+    saveDraft: saveDraft, buildFeedback: buildFeedback, approve: approve, lockAssessment: lockAssessment, unlock: unlock,
     reassess: reassess, records: records, append: append, patch: patch, ensureSheet: ensureSheet,
-    openTask: openTask, event: event, lastRevision: lastRevision, assess: assess, isCurrent: isCurrent, selectSubmission: selectSubmission, withLock: withLock, previewRubric: previewRubric, activateRubric: activateRubric,
+    openTask: openTask, event: event, lastRevision: lastRevision, assess: assess, isCurrent: isCurrent, selectSubmission: selectSubmission, withLock: withLock, previewRubric: previewRubric, activateRubric: activateRubric, rubricSource: rubricSource,
     runAi: runAi, report: report, importTask: importTask,
     addManualSubmission: addManualSubmission,
     bulkGrade: bulkGrade, verifyGradingComplete: verifyGradingComplete,
@@ -1373,6 +1431,10 @@ function apiWebSaveDraft(workbookId, taskName, submissionId, criteria, feedback,
   WebAccess.requireTeacher();
   return WebGrading.saveDraft(workbookId, taskName, submissionId, criteria, feedback, revision, 'Teacher');
 }
+function apiWebBuildFeedback(workbookId, taskName, submissionId, criteria, generalObservation) {
+  WebAccess.requireTeacher();
+  return WebGrading.buildFeedback(workbookId, taskName, submissionId, criteria, generalObservation);
+}
 function apiWebApprove(workbookId, taskName, submissionId, revision) {
   WebAccess.requireTeacher();
   return WebGrading.approve(workbookId, taskName, submissionId, revision);
@@ -1392,6 +1454,10 @@ function apiWebReassess(workbookId, taskName, submissionId) {
 function apiWebPreviewRubric(workbookId, taskName, rubricId) {
   WebAccess.requireTeacher();
   return WebGrading.previewRubric(workbookId, taskName, rubricId);
+}
+function apiWebRubricSource(workbookId, taskName) {
+  WebAccess.requireTeacher();
+  return WebGrading.rubricSource(workbookId, taskName);
 }
 function apiWebGetGradeScale(workbookId) {
   WebAccess.requireTeacher();

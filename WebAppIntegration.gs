@@ -138,6 +138,18 @@ var LessonGraderWeb = (function () {
     return found;
   }
 
+  /* Library membership is re-verified by a full Drive walk at most every 10
+     minutes per teacher (F25). Trash and file type are checked on every open. */
+  function cachedMember_(id) {
+    try { return typeof CacheService !== 'undefined' && CacheService.getUserCache().get('lg-lib-' + id) === '1'; }
+    catch (e) { return false; }
+  }
+
+  function rememberMember_(id) {
+    try { if (typeof CacheService !== 'undefined') CacheService.getUserCache().put('lg-lib-' + id, '1', 600); }
+    catch (e) { /* cache is an optimisation only */ }
+  }
+
   function open_(id) {
     if (!validId_(id)) {
       throw new Error('Invalid workbook ID.');
@@ -148,11 +160,12 @@ var LessonGraderWeb = (function () {
     if (
       file.isTrashed() ||
       file.getMimeType() !== MimeType.GOOGLE_SHEETS ||
-      !member_(id)
+      !(cachedMember_(id) || member_(id))
     ) {
       throw new Error('Workbook is not in the Graded Assessments library.');
     }
 
+    rememberMember_(id);
     var ss = SpreadsheetApp.openById(id);
 
     if (!validWorkbook_(ss)) {
@@ -442,7 +455,7 @@ var LessonGraderWeb = (function () {
     return ss;
   }
 
-  function create_(courseCode, taskName, year, rubricId, rubricName, document) {
+  function create_(courseCode, taskName, year, rubricId, rubricName, document, categoryOverride) {
     var code = String(courseCode || '').trim();
     var task = String(taskName || '').trim();
 
@@ -452,11 +465,15 @@ var LessonGraderWeb = (function () {
         : year
     ).trim();
 
-    var category = internalCategory_();
+    var requested = String(categoryOverride || '').trim();
+    if (requested && (requested.length > 80 || /[\/\\]/.test(requested))) {
+      return fail_('Category names must be 1–80 characters without slashes.');
+    }
+    var category = requested || internalCategory_();
 
     if (!category) {
       return fail_(
-        'Internal category is not configured. Ask an administrator to set the LESSON_GRADER_WEB_CATEGORY script property to the existing category name.'
+        'Choose a category (for example "Projects"), or ask an administrator to set the LESSON_GRADER_WEB_CATEGORY script property.'
       );
     }
 
@@ -527,6 +544,7 @@ var LessonGraderWeb = (function () {
       /* New files have no assessment history; reused files were backed up
          before the setup helper ran. */
       initialiseWorkbook_(workbookId);
+      rememberMember_(workbookId);
 
       var ss = open_(workbookId);
       if (taskNames_(ss).indexOf(task) === -1) throw new Error('Expected task tab is missing: ' + task);
@@ -544,6 +562,23 @@ var LessonGraderWeb = (function () {
 
       return fail_('Workbook setup failed. Check Apps Script executions.');
     }
+  }
+
+  /* One step: Classroom assignment → workbook + task tab + link + grading tables (SC04). */
+  function createFromClassroom_(courseId, courseWorkId, courseCode, taskName, year, category, rubricId) {
+    if (!/^\d{1,40}$/.test(String(courseId || '')) || !/^\d{1,40}$/.test(String(courseWorkId || ''))) {
+      return fail_('Choose a Classroom class and assignment.');
+    }
+    var created = create_(courseCode, taskName, year, rubricId || '', '', null, category);
+    if (!created || created.success !== true) return created;
+    var linked = link_(created.workbook.id, String(taskName).trim(), courseId, courseWorkId);
+    return {
+      success: linked.success === true,
+      workbook: created.workbook,
+      taskName: String(taskName).trim(),
+      selectedRubricId: created.selectedRubricId || '',
+      message: created.message + ' ' + (linked.success ? linked.message : 'The workbook was created but linking failed: ' + linked.message)
+    };
   }
 
   function link_(id, taskName, courseId, workId) {
@@ -1225,6 +1260,7 @@ var LessonGraderWeb = (function () {
     rubrics: rubrics_,
     tasks: tasks_,
     create: create_,
+    createFromClassroom: createFromClassroom_,
     link: link_,
     open: open_,
     taskNames: taskNames_,
@@ -1260,7 +1296,8 @@ function apiWebCreateWorkbook(
   year,
   rubricSelection,
   rubricName,
-  rubricDocument
+  rubricDocument,
+  category
 ) {
   WebAccess.requireTeacher();
   return LessonGraderWeb.create(
@@ -1269,8 +1306,14 @@ function apiWebCreateWorkbook(
     year,
     rubricSelection,
     rubricName,
-    rubricDocument
+    rubricDocument,
+    category
   );
+}
+
+function apiWebCreateFromClassroom(courseId, courseWorkId, courseCode, taskName, year, category, rubricId) {
+  WebAccess.requireTeacher();
+  return LessonGraderWeb.createFromClassroom(courseId, courseWorkId, courseCode, taskName, year, category, rubricId);
 }
 
 function apiWebLinkClassroomAssignment(

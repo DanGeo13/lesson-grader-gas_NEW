@@ -32,6 +32,7 @@ class Sheet {
   setFrozenRows() {}
   insertColumnsAfter(_, n) { this.columns += n; }
   appendRow(row) { this.rows.push(row.slice()); }
+  clearContents() { this.rows = []; }
 }
 
 class Workbook {
