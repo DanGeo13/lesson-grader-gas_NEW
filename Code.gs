@@ -2024,12 +2024,17 @@ var GeminiService = (function() {
     } catch (e) { return { success: false, message: 'Connection error: ' + Utils.sanitizeError(e) }; }
   }
 
-  function callGeminiWithFallback(contents, requireJson) {
+  /* preferredModel (optional) is tried first; fallbacks follow. The result's
+     `unavailable` flag is true for quota/overload/network failures, so callers
+     can offer "queue for later" instead of a hard error. */
+  function callGeminiWithFallback(contents, requireJson, preferredModel) {
     var key = getApiKey();
     if (!key) throw new Error('Gemini API key is not configured.');
 
-    var modelsToTry = [Config.PRIMARY_MODEL].concat(Config.FALLBACK_MODELS);
+    var first = /^[a-z0-9.\-]{3,60}$/.test(String(preferredModel || '')) ? preferredModel : Config.PRIMARY_MODEL;
+    var modelsToTry = [first].concat([Config.PRIMARY_MODEL].concat(Config.FALLBACK_MODELS).filter(function (m) { return m !== first; }));
     var lastError = null;
+    var unavailable = false;
 
     for (var m = 0; m < modelsToTry.length; m++) {
       var model = modelsToTry[m];
@@ -2060,7 +2065,8 @@ var GeminiService = (function() {
             return { success: true, text: contentPart, modelUsed: model };
           }
 
-          if (code === 503 || code === 429) {
+          if (code === 503 || code === 429 || code === 500) {
+            unavailable = true;
             lastError = 'Model ' + model + ' busy (code ' + code + '). Attempt ' + attempt + ' failed.';
             Utilities.sleep(attempt * 1500);
             continue;
@@ -2071,13 +2077,14 @@ var GeminiService = (function() {
           lastError = 'Gemini returned HTTP ' + code + ' (' + model + '). Check your key, API access, model availability and quota.';
           break;
         } catch (fetchErr) {
+          unavailable = true;
           lastError = 'Unable to reach Gemini (' + model + '). Check network access.';
           Utilities.sleep(1500);
         }
       }
     }
 
-    return { success: false, message: lastError || 'All models exhausted.' };
+    return { success: false, unavailable: unavailable, message: lastError || 'All models exhausted.' };
   }
 
   function runAiAssessmentWithPreparedFiles(submissionRecordId, preparedFiles) {

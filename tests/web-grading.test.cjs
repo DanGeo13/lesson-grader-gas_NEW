@@ -15,19 +15,32 @@ function setup() {
   ss.add('ClassroomConfig',[['ConfigID','CourseID','CourseName','CourseSection','CourseWorkID','AssignmentTitle','MaxPoints','SavedAt','SavedBy','Active','TaskName','DueDate','AutoImported']]);
   ss.add('RubricProfiles',[['ProfileID','ProfileName','JSONDefinition','CreatedAt']]);
   let id=1;
+  const props={};
+  const driveFiles={};
   const mocks={
-    Utilities:{getUuid:()=>`id-${id++}`},
     SpreadsheetApp:{flush(){}},
     LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
-    WebAccess:{requireTeacher:()=> 'dan@school.edu.au'},
+    WebAccess:{requireTeacher:()=> 'dan@school.edu.au',canUnlock:(e)=>mocks.unlockers.includes(e),providerStatus:()=>({})},
+    unlockers:[],
     LessonGraderWeb:{open:(wb)=> {assert.equal(wb,ss.id);return ss;},taskNames:()=>['Rube Goldberg','Water Filter'],isSharedRubric:()=>true},
     DriveService:{isEligibleForAi:(mime)=>mime === 'application/pdf'},
-    DriveApp:{getFileById:()=>({makeCopy:()=>({getId:()=> 'backup-1'})})},
+    // Drive fake: registered files are readable; anything else behaves like a backup source.
+    DriveApp:{getFileById:(fid)=>driveFiles[fid] || ({makeCopy:()=>({getId:()=> 'backup-1'})})},
+    driveFiles,
     MimeType:{GOOGLE_DOCS:'application/vnd.google-apps.document'},
-    Utilities:{getUuid:()=>`id-${id++}`,formatDate:(d)=>d.toISOString().slice(0,10)}
+    PropertiesService:{getScriptProperties:()=>({getProperty:k=>props[k]||null,setProperty:(k,v)=>{props[k]=v;},deleteProperty:k=>{delete props[k];}})},
+    props,
+    Utilities:{getUuid:()=>`id-${id++}`,formatDate:(d)=>d.toISOString().slice(0,10),base64Encode:()=> 'dGVzdA=='}
   };
-  const g=context(mocks).load('AppConfig.gs','RubricEngine.gs','WebGrading.gs','EvaluationRegister.gs');
+  const g=context(mocks).load('AppConfig.gs','RubricEngine.gs','AssessmentFlags.gs','Deidentify.gs','EvidenceService.gs','PromptRegistry.gs','AiGateway.gs','AiQueue.gs','WebGrading.gs','EvaluationRegister.gs');
   return {g,ss};
+}
+/* Registers a readable Drive file and its SubmissionFiles row. */
+function addFile(g,ss,subId,fileId,name,mime,content){
+  g.driveFiles[fileId]={getMimeType:()=>mime,getSize:()=>100,getBlob:()=>({getBytes:()=>[1,2,3],getContentType:()=>mime}),
+    getAs:()=>({getBytes:()=>[1],getDataAsString:()=>content||''})};
+  const sh=ss.getSheetByName('SubmissionFiles');
+  sh.appendRow(sh.rows[0].map(key=>({SubmissionRecordID:subId,FileRecordID:'FR-'+fileId,DriveFileID:fileId,FileName:name,MimeType:mime,AIReviewStatus:'Pending'})[key]??''));
 }
 function rowsOne() {return [
   {criterion:'Research',part:'Process',maxMarks:10,band:'A',description:'Evidence of independent research'},
@@ -51,7 +64,7 @@ test('web workflow: prepare, activate own rubric, draft, approve, lock, reassess
   const draft=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{
     C01:{checkboxes:{'C01-A-1':true},teacherWrittenNote:'Research observed.'},
     C02:{checkboxes:{'C02-A-1':true},teacherWrittenNote:'Prototype works.'}
-  },{whatWentWell:'Good engineering',areasForImprovement:'Measure more',goalsForNextAssessment:'Test early'},'', 'Teacher');
+  },{whatWentWell:'Good engineering',areasForImprovement:'Measure more',goalsForNextAssessment:'Test early',markFeedbackCurrent:true},'', 'Teacher');
   assert.equal(draft.success,true);
   assert.equal(draft.scores.totalPoints,25);
   assert.equal(objectRows(ss.getSheetByName('CriterionAssessments'))[0].FinalApprovedGrade,'');
@@ -65,8 +78,20 @@ test('web workflow: prepare, activate own rubric, draft, approve, lock, reassess
   const oldId=d.profile.profileId;
   W.lockAssessment(ss.id,'Rube Goldberg','SUB-1');
   assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].CurrentOfficial,true);
+  assert.equal(W.detail(ss.id,'Rube Goldberg','SUB-1').data.submission.stateLabel,'Final (locked)');
   W.activateRubric(ss.id,'Rube Goldberg','Newer rubric','',[...rowsOne(),{criterion:'Presentation',maxMarks:5,band:'A',description:'Clear communication'}],{},true);
   assert.equal(W.detail(ss.id,'Rube Goldberg','SUB-1').data.profile.profileId,oldId);
+  // Final lock: no reassessment and no unlock without authorisation (SC41).
+  assert.throws(()=>W.reassess(ss.id,'Rube Goldberg','SUB-1'),/final-locked/);
+  assert.throws(()=>W.unlock(ss.id,'Rube Goldberg','SUB-1','New evidence from class','UNLOCK'),/not authorised/);
+  g.WebAccess.canUnlock=()=>true;
+  assert.equal(W.detail(ss.id,'Rube Goldberg','SUB-1').data.canUnlock,true);
+  assert.throws(()=>W.unlock(ss.id,'Rube Goldberg','SUB-1','short','UNLOCK'),/reason/);
+  assert.throws(()=>W.unlock(ss.id,'Rube Goldberg','SUB-1','New evidence from class','yes'),/Type UNLOCK/);
+  W.unlock(ss.id,'Rube Goldberg','SUB-1','New evidence from class','UNLOCK');
+  assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].Status,'Approved');
+  assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].UnlockReason,'New evidence from class');
+  assert.equal(objectRows(ss.getSheetByName('ApprovedGrades')).length,1,'unlock never alters the approval snapshot');
   const r=W.reassess(ss.id,'Rube Goldberg','SUB-1');
   assert.equal(r.success,true);
   assert.equal(objectRows(ss.getSheetByName('Submissions'))[0].CurrentOfficial,false);
@@ -126,34 +151,117 @@ test('enable-grading backup failure stops all sheet migration',()=>{
   assert.equal(W.listTask(ss.id,'Rube Goldberg').data.prepared,true);
 });
 
-test('task-aware AI drafts only valid evidence; logs run without approving or changing Classroom',()=>{
+test('AI drafts only evidence-cited ticks; uncited and unknown ticks are discarded and flagged (SC17, SC22)',()=>{
   const {g,ss}=setup();const W=g.WebGrading;
   W.prepare(ss,false);
   W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
-  // Append a file through the prepared sheet's named columns.
-  const sh=ss.getSheetByName('SubmissionFiles');
-  sh.appendRow(sh.rows[0].map(key=>({SubmissionRecordID:'SUB-1',DriveFileID:'FILE-1',FileName:'folio.pdf',MimeType:'application/pdf'})[key]??''));
-  g.DriveService.prepareSingleFileForAi=()=>({status:'reviewed',fileId:'FILE-1',fileName:'folio.pdf',mimeType:'application/pdf',inlineData:{data:'dGVzdA=='}});
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
   let prompt='';
   g.GeminiService={callGeminiWithFallback:(contents)=>{
     prompt=JSON.stringify(contents);
-    return {success:true,modelUsed:'gemini-2.5-flash',text:JSON.stringify({criteria:[
-      {criterionId:'C01',tickedCheckboxes:['C01-A-1','C01-MD','C01-FAKE'],evidenceNotes:[{checkboxId:'C01-A-1',fileName:'folio.pdf',note:'Research observed'}]},
-      {criterionId:'C02',tickedCheckboxes:['C02-A-1'],evidenceNotes:[]}
-    ]})};
+    return {success:true,modelUsed:'gemini-2.5-flash',text:'```json\n'+JSON.stringify({totalMarks:99,grade:'A+',criteria:[
+      {criterionId:'C01',tickedCheckboxes:['C01-A-1','C01-B-1','C01-MD','C01-FAKE'],score:10,evidenceNotes:[{checkboxId:'C01-A-1',fileName:'folio.pdf',note:'Page 3 research table'}]},
+      {criterionId:'C02',tickedCheckboxes:['C02-A-1'],evidenceNotes:[{checkboxId:'C02-A-1',fileName:'someone-else.pdf',note:'not supplied'}]}
+    ]})+'\n```'};
   }};
   const result=W.runAi(ss.id,'Rube Goldberg','SUB-1','');
   assert.equal(result.success,true);
+  assert.equal(result.applied,true);
   assert.ok(prompt.includes('Research'));
-  assert.ok(!prompt.includes('Jewellery Design'));
+  assert.ok(prompt.includes('untrusted evidence'));
   const d=W.detail(ss.id,'Rube Goldberg','SUB-1').data;
   assert.equal(d.submission.status,'InReview');
   assert.equal(d.criteriaMap.C01.checkboxes['C01-A-1'],true);
+  assert.equal(d.criteriaMap.C01.checkboxes['C01-B-1'],undefined,'tick without a cited file is discarded');
   assert.equal(d.criteriaMap.C01.checkboxes['C01-MD'],undefined);
   assert.equal(d.criteriaMap.C01.checkboxes['C01-FAKE'],undefined);
-  assert.equal(d.criteriaMap.C01.aiProposedGrade,'A');
+  assert.equal(d.criteriaMap.C01.aiProposal.unsupported.join(),'C01-B-1');
+  assert.equal(d.criteriaMap.C01.aiEvidence[0].note,'Page 3 research table');
+  assert.equal(d.criteriaMap.C02.aiProposal.insufficient,true,'citing a file that was not supplied is not evidence');
+  // AI totals/grades in the reply are ignored: marks come from the engine (C01 A-1 = 10 x 1.0 / 1).
+  assert.equal(d.scores.totalPoints,10);
+  const codes=d.flags.flags.map(f=>f.code);
+  assert.ok(codes.includes('AI_INSUFFICIENT_EVIDENCE'));
+  assert.ok(codes.includes('AI_UNSUPPORTED_TICKS'));
+  assert.equal(objectRows(ss.getSheetByName('SubmissionFiles'))[0].AIReviewStatus,'Reviewed');
   assert.equal(objectRows(ss.getSheetByName('ApprovedGrades')).length,0);
-  assert.equal(objectRows(ss.getSheetByName('AIAssessments')).some(row=>row.RunType==='EvidenceProposal' && row.ModelUsed==='gemini-2.5-flash'),true);
+  assert.ok(objectRows(ss.getSheetByName('AIAssessments')).some(row=>row.RunType==='EvidenceProposal' && row.ExecutionStatus==='Success'));
+  assert.throws(()=>W.approve(ss.id,'Rube Goldberg','SUB-1',d.revision),/Resolve before approving/);
+});
+
+test('AI suggestions never overwrite selections the teacher already saved (SC26)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
+  const saved=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-B-1':true}},C02:{checkboxes:{}}},{},'','Teacher');
+  g.GeminiService={callGeminiWithFallback:()=>({success:true,modelUsed:'m',text:JSON.stringify({criteria:[
+    {criterionId:'C01',tickedCheckboxes:['C01-A-1'],evidenceNotes:[{checkboxId:'C01-A-1',fileName:'folio.pdf',note:'p1'}]}]})})};
+  const res=W.runAi(ss.id,'Rube Goldberg','SUB-1',saved.revision);
+  assert.equal(res.applied,false);
+  const d=W.detail(ss.id,'Rube Goldberg','SUB-1').data;
+  assert.equal(d.criteriaMap.C01.checkboxes['C01-B-1'],true);
+  assert.equal(d.criteriaMap.C01.checkboxes['C01-A-1'],undefined);
+  assert.equal(d.criteriaMap.C01.aiProposal.checks['C01-A-1'],true,'kept as a suggestion');
+});
+
+test('AI outage returns a choice instead of an error, and manual marking still works (SC48, SC50)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
+  g.GeminiService={callGeminiWithFallback:()=>({success:false,unavailable:true,message:'Model busy (code 503).'})};
+  const res=W.runAi(ss.id,'Rube Goldberg','SUB-1','');
+  assert.equal(res.success,false);
+  assert.equal(res.unavailable,true);
+  assert.equal(objectRows(ss.getSheetByName('CriterionAssessments')).length,0,'nothing drafted');
+  // Manual path is unaffected by the outage.
+  const draft=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{whatWentWell:'Clear research',markFeedbackCurrent:true},'','Teacher');
+  assert.equal(W.approve(ss.id,'Rube Goldberg','SUB-1',draft.revision).success,true);
+});
+
+test('unreadable or unsupported files are disclosed and block approval until acknowledged (SC23)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
+  addFile(g,ss,'SUB-1','FILE-2','model.stl','model/stl');
+  const sh=ss.getSheetByName('SubmissionFiles');sh.appendRow(sh.rows[0].map(k=>({SubmissionRecordID:'SUB-1',FileRecordID:'FR-X',DriveFileID:'GONE',FileName:'locked.docx',MimeType:'application/pdf'})[k]??''));
+  g.DriveApp.getFileById=(fid)=>{ if(fid==='GONE') throw new Error('denied'); return g.driveFiles[fid]; };
+  g.GeminiService={callGeminiWithFallback:()=>({success:true,modelUsed:'m',text:JSON.stringify({criteria:[
+    {criterionId:'C01',tickedCheckboxes:['C01-A-1'],evidenceNotes:[{checkboxId:'C01-A-1',fileName:'folio.pdf',note:'p1'}]},
+    {criterionId:'C02',tickedCheckboxes:['C02-A-1'],evidenceNotes:[{checkboxId:'C02-A-1',fileName:'folio.pdf',note:'p2'}]}]})})};
+  const res=W.runAi(ss.id,'Rube Goldberg','SUB-1','');
+  assert.equal(res.files.find(f=>f.fileName==='model.stl').status,'Unsupported');
+  assert.equal(res.files.find(f=>f.fileName==='locked.docx').status,'Unreadable');
+  let d=W.detail(ss.id,'Rube Goldberg','SUB-1').data;
+  assert.equal(d.attachments.find(a=>a.fileName==='locked.docx').status,'Unreadable');
+  assert.ok(d.flags.flags.some(f=>f.code==='UNREADABLE_EVIDENCE' && f.severity==='blocking'));
+  const s2=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{acknowledgedUnreadable:true},d.revision,'Teacher');
+  assert.equal(s2.flags.flags.some(f=>f.code==='UNREADABLE_EVIDENCE'),false);
+  assert.equal(W.approve(ss.id,'Rube Goldberg','SUB-1',s2.revision).success,true);
+});
+
+test('no creditable evidence can be confirmed explicitly instead of ticking false evidence (F12)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  const d1=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{}}},{},'','Teacher');
+  assert.ok(d1.flags.flags.some(f=>f.code==='NO_SELECTION' && f.criterionId==='C02'));
+  assert.throws(()=>W.approve(ss.id,'Rube Goldberg','SUB-1',d1.revision),/no creditable evidence/);
+  const d2=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{},review:{noEvidence:true}}},{},d1.revision,'Teacher');
+  const a=W.approve(ss.id,'Rube Goldberg','SUB-1',d2.revision);
+  assert.equal(a.scores.totalPoints,10);
+});
+
+test('feedback must be updated or confirmed after selections change (SC32, SC38)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  const both={C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{'C02-A-1':true}}};
+  const d1=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',both,{whatWentWell:'Excellent research',markFeedbackCurrent:true},'','Teacher');
+  assert.equal(d1.flags.flags.some(f=>f.code==='FEEDBACK_NOT_REVIEWED'),false);
+  const changed={C01:{checkboxes:{'C01-B-1':true}},C02:{checkboxes:{'C02-A-1':true}}};
+  const d2=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',changed,{whatWentWell:'Excellent research'},d1.revision,'Teacher');
+  assert.ok(d2.flags.flags.some(f=>f.code==='FEEDBACK_NOT_REVIEWED' && f.severity==='blocking'));
+  assert.throws(()=>W.approve(ss.id,'Rube Goldberg','SUB-1',d2.revision),/Feedback was written before/);
+  const d3=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',changed,{whatWentWell:'Sound research',markFeedbackCurrent:true},d2.revision,'Teacher');
+  assert.equal(W.approve(ss.id,'Rube Goldberg','SUB-1',d3.revision).success,true);
 });
 
 test('manual project submission needs no Classroom record and cannot be added twice',()=>{
@@ -189,7 +297,7 @@ test('applies late deductions to draft and approved grades without compounding o
   const draft = W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{
     C01:{checkboxes:{'C01-A-1':true}},
     C02:{checkboxes:{'C02-A-1':true}}
-  },{whatWentWell:'Good',areasForImprovement:'None',goalsForNextAssessment:'Keep it up'},'', 'Teacher', {
+  },{whatWentWell:'Good',areasForImprovement:'None',goalsForNextAssessment:'Keep it up',markFeedbackCurrent:true},'', 'Teacher', {
     deductionRule: { type: 'percent_per_day', rate: 10 },
     assessmentType: 'Summative'
   });
@@ -215,28 +323,54 @@ test('applies late deductions to draft and approved grades without compounding o
   assert.equal(gradeRow.AssessmentType, 'Summative');
 });
 
-test('bulk grading queue isolates errors per student and creates drafts for review',()=>{
+test('class batch drafts through the queue: per-student isolation, dedupe, readiness (SC28, SC49)',()=>{
   const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
   W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
-  // Add another student
   const sub2 = W.addManualSubmission(ss.id, 'Rube Goldberg', 'Sam Green', 'sam@school.edu.au', '7TECHI');
-
-  // Attach a file for SUB-1
-  const sh = ss.getSheetByName('SubmissionFiles');
-  sh.appendRow(sh.rows[0].map(key=>({SubmissionRecordID:'SUB-1',DriveFileID:'FILE-1',FileName:'folio.pdf',MimeType:'application/pdf'})[key]??''));
-  g.DriveService.prepareSingleFileForAi=(f)=>({status:'reviewed',fileId:f.DriveFileID,fileName:f.FileName,mimeType:'application/pdf',inlineData:{data:'dGVzdA=='}});
-  g.GeminiService={callGeminiWithFallback:()=>({success:true,modelUsed:'gemini-2.5-flash',text:JSON.stringify({criteria:[
-    {criterionId:'C01',tickedCheckboxes:['C01-A-1'],evidenceNotes:[]},
-    {criterionId:'C02',tickedCheckboxes:['C02-A-1'],evidenceNotes:[]}
-  ]})})};
-
-  // SUB-1 will succeed, sub2 has no files so will be isolated as error
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
+  let calls=0;
+  g.GeminiService={callGeminiWithFallback:()=>{calls++;return {success:true,modelUsed:'gemini-2.5-flash',text:JSON.stringify({criteria:[
+    {criterionId:'C01',tickedCheckboxes:['C01-A-1'],evidenceNotes:[{checkboxId:'C01-A-1',fileName:'folio.pdf',note:'p1'}]},
+    {criterionId:'C02',tickedCheckboxes:['C02-A-1'],evidenceNotes:[{checkboxId:'C02-A-1',fileName:'folio.pdf',note:'p2'}]}]})};}};
   const batch = W.bulkGrade(ss.id, 'Rube Goldberg', ['SUB-1', sub2.submissionRecordId]);
-  assert.equal(batch.total, 2);
-  assert.equal(batch.successful, 1);
-  assert.equal(batch.failed, 1);
-  assert.equal(batch.items[0].success, true);
-  assert.equal(batch.items[1].success, false);
+  assert.equal(batch.queued, 2);
+  assert.equal(batch.counts.Done, 1);      // SUB-1 drafted
+  assert.equal(batch.counts.Failed, 1);    // Sam has no files: isolated failure, not a crash
+  assert.equal(batch.remaining, 0);
+  assert.equal(calls, 1);
+  const st=g.AiQueue.status(ss.id,'Rube Goldberg').data;
+  assert.equal(st.counts.Done,1); assert.equal(st.counts.Failed,1);
+  // Re-queue while a job is active is a no-op; approved work is never queued.
+  assert.equal(g.AiQueue.enqueue(ss.id,'Rube Goldberg',['SUB-1']).queued,1);
+  assert.equal(g.AiQueue.enqueue(ss.id,'Rube Goldberg',['SUB-1']).alreadyQueued,1);
+});
+
+test('queue waits through an outage, resumes, and skips work the teacher edited meanwhile (SC48, SC49)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  const sub2 = W.addManualSubmission(ss.id, 'Rube Goldberg', 'Sam Green', 'sam@school.edu.au', '7TECHI');
+  addFile(g,ss,'SUB-1','FILE-1','folio.pdf','application/pdf');
+  addFile(g,ss,sub2.submissionRecordId,'FILE-2','sam.pdf','application/pdf');
+  let up=false, calls=0;
+  g.GeminiService={callGeminiWithFallback:(contents)=>{calls++; if(!up) return {success:false,unavailable:true,message:'503'};
+    const name=JSON.stringify(contents).includes('sam.pdf')?'sam.pdf':'folio.pdf';
+    return {success:true,modelUsed:'m',text:JSON.stringify({criteria:[{criterionId:'C01',tickedCheckboxes:['C01-A-1'],evidenceNotes:[{checkboxId:'C01-A-1',fileName:name,note:'p1'}]}]})};}};
+  g.AiQueue.enqueue(ss.id,'Rube Goldberg',['SUB-1',sub2.submissionRecordId]);
+  const down=g.AiQueue.process(ss.id,'Rube Goldberg',60000);
+  assert.equal(down.counts.Waiting,1,'stops after the first outage instead of hammering the service');
+  assert.equal(down.remaining,2);
+  // Teacher marks Sam manually while the service is down.
+  const rev=W.detail(ss.id,'Rube Goldberg',sub2.submissionRecordId).data.revision;
+  W.saveDraft(ss.id,'Rube Goldberg',sub2.submissionRecordId,{C01:{checkboxes:{'C01-B-1':true}},C02:{checkboxes:{}}},{},rev,'Teacher');
+  up=true;
+  const resumed=g.AiQueue.process(ss.id,'Rube Goldberg',60000);
+  assert.equal(resumed.counts.Done,1);
+  assert.equal(resumed.counts.Skipped,1);
+  assert.equal(W.detail(ss.id,'Rube Goldberg',sub2.submissionRecordId).data.criteriaMap.C01.checkboxes['C01-B-1'],true,'teacher work kept');
+  const jobs=objectRows(ss.getSheetByName('AiQueue'));
+  assert.equal(jobs.filter(j=>j.Status==='Done').length,1);
+  assert.equal(jobs.filter(j=>j.Status==='Skipped').length,1);
+  assert.equal(calls,2,'no duplicate processing: one failed attempt, one success');
 });
 
 test('verifies cohort grading complete and sets explicit audit lock',()=>{
@@ -253,7 +387,7 @@ test('verifies cohort grading complete and sets explicit audit lock',()=>{
   const draft = W.saveDraft(ss.id, 'Rube Goldberg', 'SUB-1', {
     C01:{checkboxes:{'C01-A-1':true}},
     C02:{checkboxes:{'C02-A-1':true}}
-  }, { whatWentWell: 'Good' }, '', 'Teacher');
+  }, { whatWentWell: 'Good', markFeedbackCurrent: true }, '', 'Teacher');
   W.approve(ss.id, 'Rube Goldberg', 'SUB-1', draft.revision);
 
   // Now verify complete
@@ -414,3 +548,29 @@ test('retrieves class table matrix and syncs persistent ClassTracking sheet idem
   assert.equal(objectRows(ss.getSheetByName('ClassTracking')).length, 1);
 });
 
+
+test('R10 reassessment keeps the earlier approval and reports what changed (SC42)',()=>{
+  const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
+  W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
+  const v1=W.saveDraft(ss.id,'Rube Goldberg','SUB-1',{C01:{checkboxes:{'C01-B-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{},'','Teacher');
+  W.approve(ss.id,'Rube Goldberg','SUB-1',v1.revision);
+  const snapshotBefore=JSON.stringify(objectRows(ss.getSheetByName('ApprovedGrades'))[0]);
+  const r=W.reassess(ss.id,'Rube Goldberg','SUB-1');
+  const v2id=r.submissionRecordId;
+  let d=W.detail(ss.id,'Rube Goldberg',v2id).data;
+  assert.equal(d.submission.stateLabel,'Not started · Reassessment v2');
+  const v2=W.saveDraft(ss.id,'Rube Goldberg',v2id,{C01:{checkboxes:{'C01-A-1':true}},C02:{checkboxes:{'C02-A-1':true}}},{},d.revision,'Teacher');
+  d=W.detail(ss.id,'Rube Goldberg',v2id).data;
+  const c01=d.comparison.criteria.find(c=>c.criterionId==='C01');
+  assert.equal(c01.added.join(),'C01-A-1');
+  assert.equal(c01.removed.join(),'C01-B-1');
+  assert.equal(d.comparison.before.totalPoints,23.75);   // 8.75 + 15
+  assert.equal(d.comparison.after.totalPoints,25);
+  assert.equal(d.comparison.approved.grade,'A');
+  W.approve(ss.id,'Rube Goldberg',v2id,v2.revision);
+  const grades=objectRows(ss.getSheetByName('ApprovedGrades'));
+  assert.equal(grades.length,2);
+  assert.equal(JSON.stringify(grades[0]),snapshotBefore,'v1 snapshot untouched');
+  const v1row=objectRows(ss.getSheetByName('Submissions')).find(s=>s.SubmissionRecordID==='SUB-1');
+  assert.equal(v1row.Status,'Approved'); assert.equal(v1row.CurrentOfficial,false);
+});
