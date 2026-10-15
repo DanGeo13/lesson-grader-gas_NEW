@@ -95,12 +95,62 @@ var RubricEngine = (function () {
     return { weights: w, bands: b };
   }
 
+  /* Removes binary floating-point noise (e.g. 84.99999999999999 for an exact
+     85%) before a boundary comparison. 9 decimal places is far below any real
+     mark precision, so this is not a rounding policy (REVIEW.md F10). */
+  function normalisePercent(percent) {
+    var p = Number(percent);
+    if (!isFinite(p)) return 0;
+    return Math.round(p * 1e9) / 1e9;
+  }
+
+  /* Letter = first band (highest min first) whose min <= percent. An exact
+     boundary value belongs to the HIGHER band: 85 -> A, 84.99 -> B. */
   function overallLetter(percent, bands) {
     var b = (bands && bands.length) ? bands : DEFAULT_BANDS;
+    var p = normalisePercent(percent);
     for (var i = 0; i < b.length; i++) {
-      if (percent >= b[i].min) return b[i].letter;
+      if (p >= b[i].min) return b[i].letter;
     }
     return b.length ? b[b.length - 1].letter : 'E';
+  }
+
+  /* Confirmed target reference points (SC19): share of a criterion's marks
+     earned when every observable in that band is evidenced. B and D are NOT
+     confirmed, so no target value exists for them. */
+  var TARGET_REFERENCE_POINTS = { A: 1.0, C: 0.5, E: 0.0 };
+
+  /** Compares configured band weights with the confirmed A/C/E reference points. Pure. */
+  function referencePointReport(weights) {
+    var w = weights || DEFAULT_WEIGHTS;
+    var differences = [];
+    Object.keys(TARGET_REFERENCE_POINTS).forEach(function (band) {
+      var configured = typeof w[band] === 'number' ? w[band] : null;
+      if (configured === null || Math.abs(configured - TARGET_REFERENCE_POINTS[band]) > 1e-9) {
+        differences.push({ band: band, configured: configured, target: TARGET_REFERENCE_POINTS[band] });
+      }
+    });
+    return {
+      matchesTarget: differences.length === 0,
+      differences: differences,
+      unresolvedBands: ['B', 'D'],
+      message: differences.length ? 'Configured weights differ from the confirmed reference points (' +
+        differences.map(function (d) { return d.band + ' ' + Math.round((d.configured || 0) * 100) + '% vs ' + Math.round(d.target * 100) + '%'; }).join(', ') +
+        '). Existing results are not recalculated.' : 'A, C and E match the confirmed reference points. B and D contributions remain unconfirmed.'
+    };
+  }
+
+  /* Builds weights for the target rule set. Refuses to invent B or D: both
+     must be supplied explicitly once the school confirms them. */
+  function targetRuleSetWeights(bWeight, dWeight) {
+    var b = Number(bWeight), d = Number(dWeight);
+    if (!isFinite(b) || !isFinite(d) || String(bWeight).trim() === '' || String(dWeight).trim() === '') {
+      throw new Error('B and D contributions are not confirmed. Enter both explicitly before using the target rule set.');
+    }
+    if (!(b > TARGET_REFERENCE_POINTS.C && b < TARGET_REFERENCE_POINTS.A) || !(d > TARGET_REFERENCE_POINTS.E && d < TARGET_REFERENCE_POINTS.C)) {
+      throw new Error('B must be between C (50%) and A (100%); D must be between E (0%) and C (50%).');
+    }
+    return { A: 1.0, B: b, C: 0.5, D: d, E: 0.0 };
   }
 
   /* NEVER invent a weight for an unfamiliar band label (e.g. "Level 4").
@@ -481,7 +531,7 @@ var RubricEngine = (function () {
        an impossible mark; retain the uncapped value for teacher review. */
     var rawPoints = totalPoints;
     totalPoints = Math.min(maxMarks, totalPoints);
-    var percent = maxMarks > 0 ? (totalPoints / maxMarks) * 100 : 0;
+    var percent = normalisePercent(maxMarks > 0 ? (totalPoints / maxMarks) * 100 : 0);
     return {
       grade: overallLetter(percent, bands),
       score: maxMarks > 0 ? totalPoints / maxMarks : 0,
@@ -516,7 +566,7 @@ var RubricEngine = (function () {
       totalPoints += res.points;
       totalMax += toNumber(c.maxMarks);
     }
-    var percent = totalMax > 0 ? (totalPoints / totalMax) * 100 : 0;
+    var percent = normalisePercent(totalMax > 0 ? (totalPoints / totalMax) * 100 : 0);
     return {
       criteria: perCriterion,
       partTotals: partTotals,
@@ -525,6 +575,38 @@ var RubricEngine = (function () {
       percent: percent,
       letter: overallLetter(percent, scale.bands)
     };
+  }
+
+  /* Half-up rounding on a decimal string, so 2.675 -> 2.68 (Number#toFixed
+     would give 2.67 because of binary representation). */
+  function roundHalfUp(value, dp) {
+    var n = normalisePercent(value);
+    var f = Math.pow(10, dp || 0);
+    return Math.round((n * f) + (n >= 0 ? 1e-9 : -1e-9)) / f;
+  }
+
+  /* Numeric grade sent to Classroom. Classroom grades are numbers only;
+     letters cannot be stored there (REVIEW.md §4 Q7). Modes:
+       scaled-points: finalScore / rubricMax x coursework maxPoints (legacy rule)
+       raw-points:    finalScore as marked (only when rubricMax == maxPoints)
+       percent:       percentage, for a 100-point assignment
+       none:          do not send a grade
+     Rounded half-up to 1 decimal place, matching the legacy sync. Pure. */
+  function classroomGrade(finalScore, rubricMax, maxPoints, mode) {
+    var m = mode || 'scaled-points';
+    if (m === 'none') return { grade: null, note: 'Grade not sent (output setting "none").' };
+    var score = toNumber(finalScore), total = toNumber(rubricMax), points = toNumber(maxPoints);
+    if (!(total > 0)) throw new Error('Rubric total must be positive.');
+    if (!(points > 0)) throw new Error('The Classroom assignment is ungraded (no maximum points); there is no numeric grade field to publish to.');
+    if (m === 'raw-points') {
+      if (Math.abs(total - points) > 1e-9) throw new Error('Raw marks need the assignment total (' + points + ') to equal the rubric total (' + total + '). Use scaled points.');
+      return { grade: roundHalfUp(score, 1), note: score + ' / ' + total };
+    }
+    if (m === 'percent') {
+      if (Math.abs(points - 100) > 1e-9) throw new Error('Percent mode needs a 100-point assignment.');
+      return { grade: roundHalfUp(score / total * 100, 1), note: 'percentage' };
+    }
+    return { grade: roundHalfUp(score / total * points, 1), note: score + ' / ' + total + ' scaled to ' + points };
   }
 
   /* ------------------------------------------------------------------ *
@@ -1191,7 +1273,13 @@ var RubricEngine = (function () {
     PROFILES_HEADERS: PROFILES_HEADERS,
     escapeHtml: escapeHtml,
     normalizeGradeScale: normalizeGradeScale,
+    normalisePercent: normalisePercent,
     overallLetter: overallLetter,
+    TARGET_REFERENCE_POINTS: TARGET_REFERENCE_POINTS,
+    referencePointReport: referencePointReport,
+    targetRuleSetWeights: targetRuleSetWeights,
+    roundHalfUp: roundHalfUp,
+    classroomGrade: classroomGrade,
     bandWeightsFor: bandWeightsFor,
     orderBandKeys: orderBandKeys,
     buildProfileFromRubricRows: buildProfileFromRubricRows,
