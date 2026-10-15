@@ -72,6 +72,10 @@ Sync never changes marks. New evidence for approved work is held until the teach
    clasp push                     # pushes *.gs, *.html, appsscript.json
    ```
    `.clasp.json` is git-ignored. All `.gs` files are load-order independent.
+   **Run `clasp push` only from this repository's folder.** `clasp push` replaces *every* file in the Apps Script
+   project the folder's `.clasp.json` points to. Copy `.clasp.json.example` to `.clasp.json` and paste the Lesson
+   Grader script ID (Apps Script editor → Project Settings → Script ID). `.claspignore` limits the push to
+   `appsscript.json` plus the 27 root `.gs`/`.html` files; check the list `clasp push` prints before deploying.
 3. Project Settings → Script Properties:
 
    | Property | Required | Purpose |

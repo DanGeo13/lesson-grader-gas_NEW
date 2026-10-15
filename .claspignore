@@ -1,0 +1,7 @@
+# Only the Apps Script source files are pushed. Everything else in this
+# repository (node_modules, tests, docs, site, scripts) must never reach the
+# Apps Script project.
+**/**
+!appsscript.json
+!*.gs
+!*.html
