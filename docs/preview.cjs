@@ -6,8 +6,8 @@ const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..');
-const source=fs.readFileSync(path.join(root,'WebApp.html'),'utf8');
-const html=source.replace('  <script>\n  (function () {','  <script src="/preview-mock.cjs"></script>\n  <script>\n  (function () {');
+const {renderWebApp}=require('../scripts/render-webapp.cjs');
+const html=renderWebApp({beforeClient:'<script src="/preview-mock.cjs"></script>'});
 const launcher=fs.readFileSync(path.join(root,'site','index.html'),'utf8');
 const port=Number(process.env.PORT)||4173;
 http.createServer((req,res)=>{

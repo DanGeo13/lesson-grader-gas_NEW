@@ -3,1354 +3,414 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#172b28">
-  <title>Teacher's Studio — Lesson Grader</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-    :root {
-      --ink: #182a28; --forest: #172b28; --forest-light: #253f3a;
-      --muted: #62726d; --line: #e4e9e2; --paper: #f6f7f2; --white: #ffffff;
-      --lime: #dff59a; --lime-deep: #a3c648; --sky: #dbeafb; --blue: #326594;
-      --rose: #fff0e9; --red: #a24637; --radius: 16px;
-      --shadow: 0 16px 48px rgba(27, 49, 41, .055), 0 2px 8px rgba(27, 49, 41, .03);
-      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-      color: var(--ink); background: var(--paper);
-    }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; }
-    button, input, select, textarea { font: inherit; }
-    button { cursor: pointer; }
-    button:disabled { cursor: not-allowed; opacity: .48; }
-    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
-      outline: 3px solid #72a6bd; outline-offset: 3px;
-    }
-    a { color: inherit; }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-    [hidden] { display: none !important; }
-    .app-shell { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 100vh; }
-    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--forest); color: #f1f4ee; padding: 24px 16px 16px; z-index: 20; overflow-y: auto; }
-    .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 30px; text-decoration: none; }
-    .brand-mark { width: 36px; height: 36px; flex: none; display: grid; place-items: center; background: var(--lime); color: var(--forest); border-radius: 10px; transform: rotate(-7deg); box-shadow: 0 4px 0 rgba(0,0,0,.2); font-weight: 800; font-size: 18px; }
-    .brand-name { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; font-weight: 800; letter-spacing: -.05em; line-height: 1.1; color: #fff; }
-    .brand-sub { font-size: 10px; color: #a7bdb2; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; margin-top: 3px; display: block; }
-    .nav-label { padding: 0 12px 8px; font-size: 10px; letter-spacing: .16em; font-weight: 800; color: #879f96; text-transform: uppercase; margin-top: 8px; }
-    .side-nav { display: flex; flex-direction: column; gap: 4px; }
-    .nav-link { min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #b7c9c0; font-size: 13px; font-weight: 700; text-align: left; transition: background .18s, color .18s; width: 100%; }
-    .nav-link:hover, .nav-link.active { background: var(--forest-light); color: white; }
-    .nav-link.active { box-shadow: inset 3px 0 0 var(--lime); }
-    .nav-link svg { width: 18px; height: 18px; flex: none; stroke-width: 1.8; }
-    .side-bottom { margin-top: auto; padding-top: 16px; }
-    .side-note { position: relative; overflow: hidden; background: #284339; padding: 14px 14px 16px; border-radius: 12px; margin-bottom: 14px; }
-    .side-note .tiny { color: var(--lime); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; }
-    .side-note strong { display: block; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; line-height: 1.35; margin: 6px 0 4px; color: #fff; }
-    .side-note small { font-size: 11px; color: #b2c8bd; line-height: 1.4; }
-    .account { display: flex; align-items: center; gap: 10px; padding: 12px 10px 0; border-top: 1px solid #37504a; font-size: 12px; }
-    .avatar { display: grid; place-items: center; border-radius: 50%; width: 32px; height: 32px; flex: none; background: #d5eacb; color: #25443a; font-size: 11px; font-weight: 800; }
-    .account small { display: block; color: #94aa9f; font-size: 10px; margin-top: 2px; max-width: 150px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-    .page-shell { min-width: 0; }
-    .topbar { height: 64px; background: rgba(255,255,255,.92); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 clamp(16px, 3vw, 40px); backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 10; }
-    .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .back-btn, .back-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #f0f4ee; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--forest); }
-    .back-btn:hover, .back-link:hover { background: #e2ecd9; }
-    .breadcrumbs { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .breadcrumbs strong { color: var(--ink); font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
-    .crumb-sep { color: #b6c3b9; }
-    .topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
-    .connection { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); background: #f9fbf7; border-radius: 40px; font-size: 11px; font-weight: 700; color: #416753; }
-    .connection .dot { width: 7px; height: 7px; background: #6ca76a; border-radius: 50%; box-shadow: 0 0 0 3px #e4f1dc; }
-    .preview-flag { display: none; padding: 5px 8px; background: #fff0cf; border-radius: 20px; color: #845525; font-size: 10px; font-weight: 800; }
-    body.preview-mode .preview-flag { display: inline; }
-    main { width: 100%; max-width: 1540px; margin: 0 auto; padding: 28px clamp(16px,3vw,40px) 60px; }
-    .view { animation: slidein .28s ease both; }
-    @keyframes slidein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    h1, h2, h3, h4, p { margin-top: 0; }
-    h1, h2, h3, h4 { font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif; letter-spacing: -.04em; }
-    h1 { font-size: clamp(26px,3vw,38px); line-height: 1.15; font-weight: 800; margin-bottom: 8px; }
-    h2 { font-size: clamp(20px,2vw,26px); line-height: 1.2; font-weight: 800; margin-bottom: 4px; }
-    h3 { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
-    p { line-height: 1.55; }
-    .eyebrow { font-size: 10px; letter-spacing: .15em; font-weight: 800; text-transform: uppercase; color: #507858; margin-bottom: 8px; }
-    .lead { color: var(--muted); font-size: 14px; max-width: 680px; }
-    .muted { color: var(--muted); }
-    .tiny { font-size: 11px; }
-    .header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-    .header-row .lead { margin-bottom: 0; }
-    .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .btn { border: 1px solid #dbe4d9; background: var(--white); color: var(--ink); padding: 9px 14px; min-height: 38px; border-radius: 8px; font-size: 12px; font-weight: 800; display: inline-flex; gap: 7px; align-items: center; justify-content: center; white-space: nowrap; transition: transform .15s, box-shadow .15s, background .15s, border-color .15s; text-decoration: none; }
-    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,48,41,.08); border-color: #b8cdb5; }
-    .btn-dark { background: var(--forest); color: white; border-color: var(--forest); }
-    .btn-dark:hover:not(:disabled) { background: #294b42; }
-    .btn-lime { background: var(--lime); border-color: var(--lime); color: #1b382e; }
-    .btn-lime:hover:not(:disabled) { background: #cce67c; }
-    .btn-ghost { border-color: transparent; background: transparent; color: #51665e; }
-    .btn-ghost:hover:not(:disabled) { background: #e9efe6; box-shadow: none; }
-    .btn-danger { color: #954a38; border-color: #f0d6cb; background: #fffaf6; }
-    .btn-sm { min-height: 32px; padding: 5px 10px; font-size: 11px; }
-    .card { background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-    .card-pad { padding: 20px; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
-    .grid-2 { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-    .hero { background: var(--forest); color: white; display: grid; grid-template-columns: minmax(0,1fr) 220px; overflow: hidden; border-radius: 20px; min-height: 190px; margin-bottom: 20px; position: relative; }
-    .hero-copy { padding: 28px clamp(20px,3vw,36px); position: relative; z-index: 1; }
-    .hero .eyebrow { color: var(--lime); }
-    .hero h1 { max-width: 580px; font-size: clamp(26px,2.8vw,36px); margin-bottom: 8px; }
-    .hero p { color: #bbcdc3; font-size: 13px; max-width: 480px; margin-bottom: 16px; }
-    .hero-art { position: relative; overflow: hidden; background: radial-gradient(circle at 70% 57%, #365d4b, transparent 65%); display: flex; align-items: center; justify-content: center; }
-    .art-star { font-size: 64px; color: var(--lime); opacity: .7; }
-    .metric { padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
-    .metric small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
-    .metric strong { font-size: 26px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; color: var(--ink); }
-    .metric-icon { width: 38px; height: 38px; border-radius: 10px; background: #eaf3e5; color: #436f4c; display: grid; place-items: center; font-size: 16px; }
-    .metric-icon.blue { background: #e7eff8; color: #2e5f8f; }
-    .metric-icon.peach { background: #faede6; color: #9c4c36; }
-    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 24px 0 14px; flex-wrap: wrap; }
-    .section-head p { margin: 0; color: var(--muted); font-size: 12px; }
-    .workbook-card { text-align: left; background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; transition: transform .18s, border-color .18s, box-shadow .18s; display: flex; flex-direction: column; width: 100%; box-shadow: var(--shadow); }
-    .workbook-card:hover { transform: translateY(-2px); border-color: #accab5; box-shadow: 0 16px 36px rgba(27,49,41,.09); }
-    .tile-top { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 12px; }
-    .tile-icon { width: 32px; height: 32px; border-radius: 8px; background: #eef5e9; color: #3d6a4c; display: grid; place-items: center; font-size: 14px; }
-    .tile-icon.sky { background: #e3effc; color: #2d5d8e; }
-    .tile-title { font-size: 14px; font-weight: 800; color: var(--ink); line-height: 1.35; margin-bottom: 4px; }
-    .tile-meta { font-size: 11px; color: var(--muted); }
-    .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: .02em; }
-    .pill.green { background: #e1f4d8; color: #245829; }
-    .pill.yellow { background: #fef3c7; color: #854d0e; }
-    .pill.blue { background: #dbeafb; color: #1e40af; }
-    .pill.gray { background: #e2e8f0; color: #475569; }
-    .table-container { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: white; }
-    table.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
-    table.data-table th { background: #f7faf5; padding: 10px 14px; font-weight: 800; color: #375345; border-bottom: 1px solid var(--line); white-space: nowrap; }
-    table.data-table td { padding: 11px 14px; border-bottom: 1px solid #edf1eb; }
-    table.data-table tr:last-child td { border-bottom: none; }
-    table.data-table tr:hover td { background: #fbfdf9; }
-    .studio-split { display: grid; grid-template-columns: 460px minmax(0,1fr); gap: 20px; align-items: start; }
-    .doc-viewer-panel { position: sticky; top: 80px; max-height: calc(100vh - 100px); display: flex; flex-direction: column; background: white; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-    .doc-viewer-head { padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8faf6; display: flex; align-items: center; justify-content: space-between; }
-    .doc-viewer-body { flex: 1; overflow-y: auto; padding: 16px; background: #fafbfc; }
-    .evidence-anchor { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid #bae6fd; margin: 2px 0; }
-    .evidence-anchor:hover { background: #bae6fd; }
-    .criteria-stack { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
-    .criterion-card { background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-    .criterion-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-    .observable-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #f9fbf8; margin-bottom: 6px; border: 1px solid #ebf2e8; }
-    .observable-row input[type="checkbox"] { margin-top: 3px; transform: scale(1.15); cursor: pointer; }
-    .observable-text { font-size: 12px; line-height: 1.45; flex: 1; }
-    .observable-share { font-size: 10px; font-weight: 800; color: #5b7c62; background: #e8f3e2; padding: 2px 6px; border-radius: 4px; }
-    .form-field { margin-bottom: 14px; }
-    .form-field label { display: block; font-size: 11px; font-weight: 800; color: #2e443c; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
-    .form-field input, .form-field select, .form-field textarea { width: 100%; border: 1px solid #cfdcd2; border-radius: 8px; padding: 9px 12px; background: white; font-size: 13px; color: var(--ink); }
-    .form-field textarea { min-height: 75px; resize: vertical; line-height: 1.45; }
-    .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-    .form-grid.three { grid-template-columns: repeat(3,minmax(0,1fr)); }
-    .note { padding: 12px 14px; border-radius: 10px; background: #edf5ea; color: #2a5538; font-size: 12px; line-height: 1.5; border-left: 3px solid #6aa06a; }
-    .note.warn { background: #fef8ee; color: #85531d; border-left-color: #d99b3b; }
-    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--forest); color: white; padding: 12px 18px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; z-index: 100; max-width: 440px; }
-    .toast.error { background: #8e2c21; }
-    .toast button { background: none; border: none; color: white; font-size: 16px; padding: 0 4px; }
-    .busy-bar { height: 3px; background: linear-gradient(90deg, #dff59a, #4ade80, #38bdf8); position: fixed; top: 0; left: 0; right: 0; z-index: 999; animation: pulse 1.2s infinite ease-in-out; }
-    @keyframes pulse { 0% { opacity: .4; } 50% { opacity: 1; } 100% { opacity: .4; } }
-    .dictate-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 6px; background: #f3f4f6; border: 1px solid #d1d5db; font-size: 11px; font-weight: 700; color: #374151; }
-    .dictate-btn.active { background: #fee2e2; color: #991b1b; border-color: #fca5a5; animation: pulse 1s infinite; }
-    .mobile-nav { display: none; }
-    @media (max-width: 900px) {
-      .app-shell { grid-template-columns: 1fr; }
-      .sidebar { display: none; }
-      .mobile-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: var(--forest); z-index: 50; border-top: 1px solid #284439; justify-content: space-around; align-items: center; }
-      .mobile-nav .nav-link { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 0; min-height: unset; justify-content: center; }
-      .mobile-nav .nav-link svg { width: 18px; height: 18px; }
-      .studio-split { grid-template-columns: 1fr; }
-      .doc-viewer-panel { position: static; height: 350px; }
-    }
-    @media (max-width: 520px) {
-      .topbar { padding: 0 12px; }
-      .header-row { flex-direction: column; align-items: flex-start; }
-      .form-grid, .form-grid.three, .grid-2, .grid-3 { grid-template-columns: 1fr; }
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson Grader</title>
+  <?!= include('WebAppStyles'); ?>
 </head>
 <body>
-  <div id="busy-bar" class="busy-bar" hidden></div>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Teacher's Studio Navigation">
-      <a class="brand" href="#overview" data-nav="overview">
-        <span class="brand-mark">TS</span>
-        <span>
-          <span class="brand-name">Teacher's Studio</span>
-          <span class="brand-sub">Lesson Grader</span>
-        </span>
-      </a>
-      <div class="nav-label">Workspace</div>
-      <nav class="side-nav">
-        <button class="nav-link active" data-nav="overview" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button>
-        <button class="nav-link" data-nav="workbooks" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><span>Workbooks</span></button>
-        <button class="nav-link" data-nav="table" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span>Class Table</span></button>
-        <button class="nav-link" data-nav="rubrics" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4zm0 16c0-1.7 1.3-3 3-3h13M8 8h8m-8 4h5"/></svg><span>Rubric Library</span></button>
-        <button class="nav-link" data-nav="classroom" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 11h8m-8 4h5M7 4V2m10 2V2"/></svg><span>Classroom</span></button>
-        <button class="nav-link" data-nav="audit" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 14l2 2 4-4"/></svg><span>Registration & Samples</span></button>
-        <button class="nav-link" data-nav="settings" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 13.5l2-1.5-2-1.5-.5-2 1-2.3-2.8-2.8-2.3 1-2-.5L12 2l-1.5 2-2 .5-2.3-1L3.4 6.3l1 2.3-.5 2L2 12l2 1.5.5 2-1 2.3 2.8 2.8 2.3-1 2 .5L12 22l1.5-2 2-.5 2.3 1 2.8-2.8-1-2.3z"/></svg><span>Settings</span></button>
-      </nav>
-      <div class="side-bottom">
-        <div class="side-note">
-          <span class="tiny">Teacher's Studio</span>
-          <strong>Human judgment remains primary.</strong>
-          <small>AI proposes drafts and evidence. You make every grading decision.</small>
-        </div>
-        <div class="account">
-          <span class="avatar" id="user-avatar">TS</span>
-          <div><strong>Teacher account</strong><small id="account-email">Connecting…</small></div>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="busy" class="busy" hidden></div>
+  <header class="appbar">
+    <a class="brand" href="#/home">Lesson Grader</a>
+    <span class="spacer"></span>
+    <span class="who" id="who"></span>
+    <a class="btn small" href="#/settings">Settings</a>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <!-- Access denied -->
+    <section id="view-denied" hidden aria-labelledby="denied-title">
+      <div class="card">
+        <h1 id="denied-title">Teacher access required</h1>
+        <p>Sign in with an approved school teacher account. The owner adds teacher emails to the <code>LESSON_GRADER_ALLOWED_EMAILS</code> Script Property.</p>
+        <p class="muted small" id="denied-detail"></p>
+        <button class="btn primary" type="button" id="retry-auth">Try again</button>
+      </div>
+    </section>
+
+    <!-- 1. Landing: grading workbooks -->
+    <section id="view-home" hidden aria-labelledby="home-title">
+      <div class="row between">
+        <h1 id="home-title">Grading workbooks</h1>
+        <div class="row">
+          <a class="btn primary" href="#/create">New workbook</a>
+          <button class="btn" type="button" id="refresh-workbooks">Refresh</button>
         </div>
       </div>
-    </aside>
-    <div class="page-shell">
-      <header class="topbar">
-        <div class="topbar-left">
-          <button type="button" class="back-btn" id="top-back-btn" aria-label="Go back to previous screen">← Back</button>
-          <div class="breadcrumbs" id="breadcrumb"><span>Teacher's Studio</span><span class="crumb-sep">/</span><strong>Overview</strong></div>
+      <div id="resume"></div>
+      <label class="sr-only" for="wb-search">Search workbooks</label>
+      <input type="search" id="wb-search" placeholder="Search by class, task or year" autocomplete="off">
+      <div id="wb-list" class="wb-list" aria-live="polite"></div>
+    </section>
+
+    <!-- 2. Task dashboard -->
+    <section id="view-task" hidden aria-labelledby="task-title">
+      <nav class="context" aria-label="Location"><a href="#/home">Workbooks</a><span aria-hidden="true">›</span><span id="task-crumb"></span></nav>
+      <div class="row between">
+        <h1 id="task-title">Task</h1>
+        <div class="row" id="task-chips"></div>
+      </div>
+      <div id="task-banners"></div>
+      <div class="card">
+        <div class="row" role="toolbar" aria-label="Task actions">
+          <button class="btn" type="button" id="btn-sync">Sync now</button>
+          <a class="btn" id="btn-rubric" href="#">Rubric</a>
+          <button class="btn" type="button" id="btn-ai-selected">Draft selected with AI</button>
+          <button class="btn" type="button" id="btn-process-queue">Process AI queue</button>
+          <button class="btn primary" type="button" id="btn-publish">Publish selected…</button>
+          <button class="btn" type="button" id="btn-add-student">Add student</button>
+          <a class="btn" id="btn-link" href="#">Link Classroom</a>
+          <a class="btn" id="btn-register" href="#">Evaluation / register</a>
+          <a class="btn" id="btn-results" href="#">Class results</a>
         </div>
-        <div class="topbar-right">
-          <span class="preview-flag">DESIGN PREVIEW</span>
-          <span class="connection" id="connection"><span class="dot"></span><span id="connection-text">Connected</span></span>
+        <p class="small muted" id="queue-status" aria-live="polite"></p>
+      </div>
+      <form id="manual-student-form" class="card" hidden novalidate>
+        <h2>Add a student without Classroom</h2>
+        <div class="grid three">
+          <label class="field"><span>Student name</span><input type="text" id="manual-name" maxlength="160" required></label>
+          <label class="field"><span>School email <span class="hint">optional</span></span><input type="email" id="manual-email" maxlength="180"></label>
+          <label class="field"><span>Class <span class="hint">optional</span></span><input type="text" id="manual-class" maxlength="100"></label>
         </div>
-      </header>
-      <main id="main">
-        <!-- 1. OVERVIEW -->
-        <section class="view" id="view-overview" aria-labelledby="overview-title">
-          <div class="hero">
-            <div class="hero-copy">
-              <div class="eyebrow">Teacher's Studio · Professional Assessment Platform</div>
-              <h1 id="overview-title">Rigorous assessment, streamlined.</h1>
-              <p>Task-agnostic rubrics, deterministic scoring, Drive audit integration, and teacher-controlled moderation.</p>
-              <div class="actions">
-                <button type="button" class="btn btn-lime" data-nav="workbooks">Open Workbooks ↗</button>
-                <button type="button" class="btn btn-dark" data-nav="table">View Class Table</button>
+        <div class="row"><button class="btn primary" type="submit">Add student</button><button class="btn ghost" type="button" id="manual-cancel">Cancel</button></div>
+      </form>
+      <div class="toolbar">
+        <label class="sr-only" for="roster-search">Search students</label>
+        <input type="search" id="roster-search" placeholder="Search students" autocomplete="off">
+        <label class="sr-only" for="roster-filter">Filter</label>
+        <select id="roster-filter">
+          <option value="current">Current versions</option>
+          <option value="todo">Needs marking</option>
+          <option value="draft">Drafts</option>
+          <option value="approved">Approved or final</option>
+          <option value="changed">Evidence changed</option>
+          <option value="all">All versions</option>
+        </select>
+        <label class="sr-only" for="roster-sort">Sort</label>
+        <select id="roster-sort">
+          <option value="name">Sort by name</option>
+          <option value="status">Sort by state</option>
+          <option value="updated">Sort by last update</option>
+        </select>
+        <label class="check"><input type="checkbox" id="select-all"> Select all shown</label>
+      </div>
+      <div class="card"><ul class="roster" id="roster" aria-live="polite"></ul></div>
+    </section>
+
+    <!-- 3. Assessment Studio -->
+    <section id="view-studio" hidden aria-labelledby="student-title">
+      <div class="studio-head">
+        <nav class="context" aria-label="Location"><a href="#" id="studio-back">‹ Back to class</a><span id="studio-crumb"></span></nav>
+        <div class="row between">
+          <h1 id="student-title">Student</h1>
+          <div class="row"><span id="student-state" class="pill neutral"></span>
+            <button class="btn small" type="button" id="prev-student" aria-label="Previous student">‹ Prev</button>
+            <button class="btn small" type="button" id="next-student" aria-label="Next student">Next ›</button></div>
+        </div>
+        <div class="studio-tabs" role="tablist" aria-label="Assessment sections">
+          <button type="button" role="tab" id="tab-assess" data-pane="pane-assess" aria-controls="pane-assess" aria-selected="true">Assess</button>
+          <button type="button" role="tab" id="tab-evidence" data-pane="pane-evidence" aria-controls="pane-evidence" aria-selected="false">Evidence</button>
+          <button type="button" role="tab" id="tab-feedback" data-pane="pane-feedback" aria-controls="pane-feedback" aria-selected="false">Feedback</button>
+          <button type="button" role="tab" id="tab-history" data-pane="pane-history" aria-controls="pane-history" aria-selected="false">History</button>
+        </div>
+      </div>
+      <div id="studio-banners"></div>
+      <div class="studio-body">
+        <div class="pane pane-evidence" id="pane-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+          <div class="card">
+            <h2>Evidence</h2>
+            <div id="evidence-list"></div>
+            <label class="check" id="ack-unreadable-wrap" hidden><input type="checkbox" id="ack-unreadable"> I have opened and checked the files that could not be read automatically.</label>
+            <iframe id="evidence-viewer" class="viewer" title="Selected evidence file" hidden></iframe>
+          </div>
+          <div class="card" id="evidence-history-card" hidden>
+            <h3>Evidence text used for AI drafts</h3>
+            <div id="evidence-history"></div>
+            <pre class="text" id="evidence-text" hidden></pre>
+          </div>
+        </div>
+        <div>
+          <div class="pane" id="pane-assess" role="tabpanel" aria-labelledby="tab-assess">
+            <div class="card">
+              <div class="score" aria-live="polite">
+                <span class="big" id="live-points">0</span><span class="muted" id="live-max">/ 0</span>
+                <span class="pill neutral" id="live-letter">—</span><span class="muted" id="live-percent"></span>
               </div>
+              <p class="small muted" id="score-note">Marks are calculated from ticked observables. AI never sets marks.</p>
+              <ul class="flags" id="flag-summary" aria-label="Flags to review"></ul>
             </div>
-            <div class="hero-art"><span class="art-star">✳</span></div>
+            <div id="comparison"></div>
+            <div id="criteria"></div>
           </div>
-          <div class="grid-3 metrics">
-            <div class="card metric"><div><small>Grading Workbooks</small><strong id="overview-workbooks">0</strong></div><span class="metric-icon">▤</span></div>
-            <div class="card metric"><div><small>Shared Rubrics</small><strong id="overview-rubrics">0</strong></div><span class="metric-icon blue">◇</span></div>
-            <div class="card metric"><div><small>Audit Compliance</small><strong id="overview-audit" style="font-size:18px">Active</strong></div><span class="metric-icon peach">✓</span></div>
-          </div>
-          <div class="section-head"><div><h2>Active Grading Workbooks</h2><p>Select a project workbook to manage tasks and grade students.</p></div><button type="button" class="btn btn-sm btn-dark" data-nav="create">+ New Workbook</button></div>
-          <div class="grid-3" id="overview-list"></div>
-        </section>
-
-        <!-- 2. WORKBOOKS -->
-        <section class="view" id="view-workbooks" hidden aria-labelledby="workbooks-title">
-          <div class="header-row"><div><div class="eyebrow">Library</div><h1 id="workbooks-title">Grading Workbooks</h1><p class="lead">Select a course workbook from your Google Drive.</p></div><div class="actions"><button class="btn" type="button" id="refresh-workbooks">↻ Refresh</button><button class="btn btn-dark" type="button" data-nav="create">+ Create Workbook</button></div></div>
-          <div class="grid-3" id="workbook-list"></div>
-        </section>
-
-        <!-- 3. WORKBOOK TASKS -->
-        <section class="view" id="view-workbook" hidden aria-labelledby="workbook-title">
-          <button class="back-link" type="button" data-nav="workbooks">← All Workbooks</button>
-          <div class="header-row" style="margin-top:12px"><div><div class="eyebrow">Grading Workbook</div><h1 id="workbook-title">Tasks &amp; Projects</h1><p class="lead" id="workbook-subtitle">Select a project task to open its student roster and rubric.</p></div><button class="btn btn-dark" type="button" data-nav="create">+ New Task</button></div>
-          <div class="grid-3" id="task-list"></div>
-        </section>
-
-        <!-- 4. TASK ROSTER -->
-        <section class="view" id="view-task" hidden aria-labelledby="task-title">
-          <button class="back-link" type="button" id="back-to-workbook">← Workbook Tasks</button>
-          <div class="header-row" style="margin-top:12px">
-            <div><div class="eyebrow" id="task-eyebrow">Project Workspace</div><h1 id="task-title">Task Overview</h1><p class="lead" id="task-workbook-name"></p></div>
-            <div class="actions">
-              <button class="btn" id="task-import" type="button">↧ Import Classroom</button>
-              <button class="btn" id="task-bulk-ai" type="button">✳ Bulk AI Draft</button>
-              <button class="btn" id="task-add-student" type="button">+ Add Student</button>
-              <button class="btn btn-dark" id="task-add-rubric" type="button">+ Review Rubric</button>
+          <div class="pane" id="pane-feedback" role="tabpanel" aria-labelledby="tab-feedback" hidden>
+            <div class="card">
+              <div class="row between"><h2>Student feedback</h2>
+                <button class="btn small" type="button" id="btn-build-feedback">Update from rubric &amp; observations</button></div>
+              <p class="small muted">Built only from ticked observables, next steps not yet shown, and your observations. Edit freely; nothing is sent until you publish.</p>
+              <div class="field"><div class="label-row"><label for="fb-well">What went well</label><button class="btn small dictate" type="button" data-dictate="fb-well" aria-pressed="false">Dictate</button></div>
+                <textarea id="fb-well" data-feedback="whatWentWell"></textarea><div class="dictation-status" data-dictation-status="fb-well" aria-live="polite"></div></div>
+              <div class="field"><div class="label-row"><label for="fb-improve">Areas for improvement</label><button class="btn small dictate" type="button" data-dictate="fb-improve" aria-pressed="false">Dictate</button></div>
+                <textarea id="fb-improve" data-feedback="areasForImprovement"></textarea><div class="dictation-status" data-dictation-status="fb-improve" aria-live="polite"></div></div>
+              <div class="field"><div class="label-row"><label for="fb-goals">Goals for next assessment</label><button class="btn small dictate" type="button" data-dictate="fb-goals" aria-pressed="false">Dictate</button></div>
+                <textarea id="fb-goals" data-feedback="goalsForNextAssessment"></textarea><div class="dictation-status" data-dictation-status="fb-goals" aria-live="polite"></div></div>
+              <label class="check"><input type="checkbox" id="fb-current"> This feedback matches the current marks, selections and observations.</label>
+              <div class="row"><button class="btn small" type="button" id="btn-output-preview">Preview student comment</button></div>
+              <div id="output-preview"></div>
+            </div>
+            <div class="card">
+              <h2>Teacher-only notes</h2>
+              <div class="field"><div class="label-row"><label for="fb-observation">Practical / classroom observation</label><button class="btn small dictate" type="button" data-dictate="fb-observation" aria-pressed="false">Dictate</button></div>
+                <textarea id="fb-observation" data-feedback="generalObservation"></textarea><div class="dictation-status" data-dictation-status="fb-observation" aria-live="polite"></div>
+                <span class="hint">Included when you press "Update from rubric &amp; observations".</span></div>
+              <div class="field"><div class="label-row"><label for="fb-evaluation">Personal evaluation (private)</label><button class="btn small dictate" type="button" data-dictate="fb-evaluation" aria-pressed="false">Dictate</button></div>
+                <textarea id="fb-evaluation" data-feedback="teacherEvaluation"></textarea><div class="dictation-status" data-dictation-status="fb-evaluation" aria-live="polite"></div>
+                <span class="hint">Never shown to students or published.</span></div>
             </div>
           </div>
-          <div id="task-notice"></div>
-          <form id="manual-student-form" class="card card-pad" hidden style="margin-bottom:16px;max-width:760px">
-            <div class="eyebrow">Teacher-Entered Submission</div>
-            <h3>Add a Student Manually</h3>
-            <p class="muted tiny">For in-class physical projects without a Classroom submission.</p>
-            <div class="form-grid three">
-              <div class="form-field"><label for="manual-name">Student Name</label><input id="manual-name" required maxlength="160" placeholder="e.g. Alex Taylor"></div>
-              <div class="form-field"><label for="manual-email">School Email (optional)</label><input id="manual-email" type="email" maxlength="180" placeholder="student@school.edu.au"></div>
-              <div class="form-field"><label for="manual-class">Class (optional)</label><input id="manual-class" maxlength="100" placeholder="e.g. 7TECHI"></div>
-            </div>
-            <div class="actions"><button class="btn btn-dark" type="submit">Add Student</button><button class="btn btn-ghost" id="cancel-manual" type="button">Cancel</button></div>
-          </form>
-          <div class="task-banner" id="task-profile-banner"></div>
-          <div class="grid-3 metrics" style="margin-bottom:16px">
-            <div class="card metric"><div><small>Total Submissions</small><strong id="stat-total">0</strong></div><span class="metric-icon">◎</span></div>
-            <div class="card metric"><div><small>Awaiting Review</small><strong id="stat-awaiting">0</strong></div><span class="metric-icon blue">◫</span></div>
-            <div class="card metric"><div><small>Approved Grades</small><strong id="stat-approved">0</strong></div><span class="metric-icon peach">✓</span></div>
+          <div class="pane" id="pane-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+            <div class="card"><h2>History</h2><ol id="history" class="small"></ol></div>
           </div>
-          <div class="section-head">
-            <div><h2>Student Submissions</h2><p>Click a student to enter the Assessment Studio.</p></div>
-            <div class="actions">
-              <button type="button" class="btn btn-sm" id="btn-flag-incomplete">⚑ Flag Incomplete</button>
-              <button type="button" class="btn btn-sm" data-nav="audit">Drive Samples &amp; Audit →</button>
-            </div>
+        </div>
+      </div>
+      <div class="actionbar">
+        <div class="inner">
+          <span class="save-status" id="save-status" role="status" aria-live="polite">No changes</span>
+          <button class="btn" type="button" id="btn-ai">Draft with AI</button>
+          <button class="btn primary" type="button" id="btn-save">Save draft</button>
+          <button class="btn" type="button" id="btn-approve">Review &amp; approve…</button>
+          <button class="btn" type="button" id="btn-lock" hidden>Final lock…</button>
+          <button class="btn" type="button" id="btn-unlock" hidden>Unlock…</button>
+          <button class="btn" type="button" id="btn-reassess" hidden>Reassess…</button>
+          <button class="btn" type="button" id="btn-report" hidden>Report PDF</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Rubric review -->
+    <section id="view-rubric" hidden aria-labelledby="rubric-title">
+      <nav class="context" aria-label="Location"><a href="#" id="rubric-back">‹ Back to class</a></nav>
+      <h1 id="rubric-title">Rubric</h1>
+      <div id="rubric-status"></div>
+      <div class="card">
+        <h2>Load rows to review</h2>
+        <div class="row">
+          <button class="btn" type="button" id="rubric-load-active">Edit active rubric</button>
+          <button class="btn" type="button" id="rubric-load-sheet">Load from workbook RubricRows sheet</button>
+        </div>
+        <div class="grid two">
+          <label class="field"><span>Shared rubric</span><select id="rubric-shared"></select></label>
+          <div class="field"><span>&nbsp;</span><button class="btn" type="button" id="rubric-load-shared">Load shared rubric</button></div>
+        </div>
+        <details><summary class="small">Import from a PDF, Markdown or text document (AI extraction)</summary>
+          <div class="grid two">
+            <label class="field"><span>Rubric name</span><input type="text" id="upload-name" maxlength="120"></label>
+            <label class="field"><span>File</span><input type="file" id="upload-file" accept=".pdf,.md,.txt"></label>
           </div>
-          <div class="toolbar" style="display:flex;gap:12px;margin-bottom:14px;align-items:center;justify-content:space-between">
-            <div style="display:flex;gap:8px;align-items:center">
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700"><input type="checkbox" id="select-all-students"> Select All</label>
-              <input id="student-search" placeholder="Search students…" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;font-size:12px">
-            </div>
-            <div class="filters" role="group"><button type="button" class="btn btn-sm active" data-filter="current">Current</button><button type="button" class="btn btn-sm" data-filter="review">Needs review</button><button type="button" class="btn btn-sm" data-filter="all">All</button></div>
-          </div>
-          <div id="student-list"></div>
-        </section>
-
-        <!-- 5. ASSESSMENT STUDIO (SPLIT SCREEN) -->
-        <section class="view" id="view-grading" hidden aria-labelledby="student-title">
-          <button class="back-link" type="button" id="back-to-task">← Task Overview</button>
-          <div class="header-row" style="margin-top:12px">
-            <div><div class="eyebrow" id="grading-eyebrow">Assessment Studio</div><h1 id="student-title">Student Name</h1><span id="student-meta" class="muted tiny"></span></div>
-            <div class="actions">
-              <span class="pill" id="student-status">New</span>
-              <button type="button" class="btn" id="download-report">↓ Report PDF</button>
-              <button type="button" class="btn" id="lock-grade" hidden>🔒 Lock Grade</button>
-              <button type="button" class="btn btn-dark" id="run-ai">✳ Draft with Gemini</button>
-            </div>
-          </div>
-          <div id="grading-warning"></div>
-          <div class="studio-split">
-            <!-- Left Pane: Scrollable Submitted Work & Deep Evidence Links -->
-            <div class="doc-viewer-panel">
-              <div class="doc-viewer-head">
-                <strong style="font-size:12px;color:var(--forest)">Submitted Folio &amp; Evidence</strong>
-                <span class="tiny muted" id="doc-file-count">0 files</span>
-              </div>
-              <div class="doc-viewer-body">
-                <div id="evidence-files" style="margin-bottom:14px"></div>
-                <div class="card card-pad" style="background:#f1f5f9;border:1px dashed #cbd5e1;text-align:center">
-                  <div style="font-size:24px;margin-bottom:6px">📄</div>
-                  <strong style="font-size:13px">Document View &amp; Evidence Anchors</strong>
-                  <p class="tiny muted" style="margin:4px 0 10px">Click any observable anchor below to jump to that evidence page.</p>
-                  <div id="deep-link-anchors"></div>
-                </div>
-                <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
-                <div class="eyebrow">Assessment History</div>
-                <div class="history-list" id="grade-history"></div>
-              </div>
-            </div>
-            <!-- Right Pane: Rubric Observables, Deductions, Notes, Feedback -->
-            <div>
-              <div class="card card-pad" style="margin-bottom:16px">
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                  <div>
-                    <span class="eyebrow">Live Score Calculation</span>
-                    <div style="font-size:28px;font-weight:800;font-family:'Plus Jakarta Sans',sans-serif">
-                      <span id="live-score">0</span><small id="live-score-outof" style="font-size:14px;color:var(--muted)"> / 0 marks</small>
-                      <span class="pill" id="live-grade" style="margin-left:8px;font-size:14px">Not assessed</span>
-                    </div>
-                  </div>
-                  <div id="deduction-box" style="text-align:right">
-                    <span class="tiny muted">Deduction Rule</span>
-                    <div id="live-deduction-info" style="font-size:12px;font-weight:700;color:#991b1b">No late deduction</div>
-                  </div>
-                </div>
-              </div>
-              <div id="criterion-list" class="criteria-stack"></div>
-              <div class="card card-pad" style="margin-bottom:16px">
-                <div class="eyebrow">Teacher Feedback &amp; Goals</div>
-                <div class="form-field"><label for="feedback-well">What Went Well</label><textarea id="feedback-well" placeholder="Specific strengths observed in student work…"></textarea></div>
-                <div class="form-field"><label for="feedback-next">Areas for Growth</label><textarea id="feedback-next" placeholder="Actionable recommendations for improvement…"></textarea></div>
-                <div class="form-field"><label for="feedback-goals">Goals for Next Assessment</label><textarea id="feedback-goals" placeholder="Targeted milestone for next project…"></textarea></div>
-              </div>
-              <div class="card card-pad" style="background:#f8faf6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                <div><strong id="save-state" style="font-size:12px">Ready to review</strong><br><small class="muted">Drafts never publish automatically.</small></div>
-                <div class="actions">
-                  <button class="btn btn-ghost" id="new-reassessment" type="button" hidden>↻ Reassess</button>
-                  <button class="btn" id="save-draft" type="button">Save Draft</button>
-                  <button class="btn btn-lime" id="approve-grade" type="button">Approve Grade →</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 6. CLASS TABLE MATRIX -->
-        <section class="view" id="view-table" hidden aria-labelledby="table-title">
-          <div class="header-row">
-            <div><div class="eyebrow">Student Progression</div><h1 id="table-title">Class Table</h1><p class="lead">Multi-term assessment matrix with formative and summative progression tracking.</p></div>
-            <div class="actions">
-              <button class="btn" id="btn-sync-class-sheet" type="button">💾 Sync to Sheets</button>
-            </div>
-          </div>
-          <div class="card card-pad" style="margin-bottom:16px">
-            <div class="form-grid three">
-              <div class="form-field"><label for="table-term-pair">Term Pair</label><select id="table-term-pair"><option>Terms 1 &amp; 2</option><option>Terms 3 &amp; 4</option></select></div>
-              <div class="form-field"><label for="table-stage">Stage</label><select id="table-stage"><option>Stage 4 (Years 7-8)</option><option selected>Stage 5 (Years 9-10)</option><option>Stage 6 (Years 11-12)</option></select></div>
-              <div class="form-field"><label for="table-class">Class</label><select id="table-class"><option>7TECHI</option><option>8TECHI</option><option selected>9JEV</option></select></div>
-            </div>
-          </div>
-          <div class="table-container" id="class-table-matrix"></div>
-        </section>
-
-        <!-- 7. RUBRICS LIBRARY & FORMATIVE GENERATOR -->
-        <section class="view" id="view-rubrics" hidden aria-labelledby="rubrics-title">
-          <div class="header-row">
-            <div><div class="eyebrow">Universal Rubrics</div><h1 id="rubrics-title">Rubric Library</h1><p class="lead">Task-specific reviewed rubric profiles with discrete observables, equal shares, and syllabus outcomes.</p></div>
-            <div class="actions">
-              <button class="btn" id="btn-generate-formative" type="button">✳ Generate Formative Rubric</button>
-              <button class="btn btn-dark" id="new-manual-rubric" type="button">+ Build Rubric</button>
-            </div>
-          </div>
-          <div class="section-head"><div><h2>Shared Rubrics</h2><p>Reviewed criteria profiles stored in Drive library.</p></div></div>
-          <div class="grid-3" id="shared-rubric-list"></div>
-          <div class="card card-pad" style="margin-top:20px">
-            <div class="eyebrow">Import from Document</div>
-            <h3>Upload Rubric File</h3>
-            <p class="muted tiny">PDF, Markdown or text up to 8 MB. Gemini extracts a draft; you check every criterion and mark before activating.</p>
-            <div class="form-grid">
-              <div class="form-field"><label for="upload-name">Rubric Title</label><input id="upload-name" placeholder="e.g. Water Filtration — Interim Rubric"></div>
-              <div class="form-field"><label for="upload-file">File</label><input id="upload-file" type="file" accept=".pdf,.md,.txt"></div>
-            </div>
-            <button class="btn btn-dark" id="upload-rubric" type="button">Upload &amp; Extract</button>
-          </div>
-        </section>
-
-        <!-- 8. RUBRIC BUILDER / EDITOR -->
-        <section class="view" id="view-rubric-editor" hidden aria-labelledby="editor-title">
-          <button class="back-link" type="button" data-nav="rubrics">← Rubric Library</button>
-          <div class="header-row" style="margin-top:12px"><div><div class="eyebrow">Rubric Studio</div><h1 id="editor-title">Build Task Rubric</h1><p class="lead">Define discrete observables for each performance level with equal mark allocation.</p></div><span class="pill yellow">Draft — Not Active</span></div>
-          <div class="grid-2">
-            <div class="card card-pad">
-              <div class="form-grid">
-                <div class="form-field"><label for="editor-workbook">Workbook</label><select id="editor-workbook"></select></div>
-                <div class="form-field"><label for="editor-task">Task Name</label><select id="editor-task"></select></div>
-              </div>
-              <div class="form-field"><label for="editor-name">Rubric Title</label><input id="editor-name" placeholder="e.g. Design Folio Assessment"></div>
-              <div class="form-field"><label for="editor-assessment-type">Assessment Type</label><select id="editor-assessment-type"><option value="Summative">Summative</option><option value="Formative">Formative</option></select></div>
-              <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
-              <div class="section-head"><div><h3>Criteria &amp; Observables</h3></div><button class="btn btn-sm" id="editor-add-criterion" type="button">+ Add Criterion</button></div>
-              <div id="editor-criteria"></div>
-            </div>
-            <div>
-              <div class="card card-pad" style="position:sticky;top:80px">
-                <div class="eyebrow">Rubric Verification</div>
-                <h3 id="editor-count">0 Criteria</h3>
-                <p class="muted tiny" id="editor-total">0 Total Marks</p>
-                <div id="editor-scale"></div>
-                <div id="editor-mappings"></div>
-                <div class="note warn" style="margin:16px 0">Unfamiliar performance bands require explicit 0–1 weights. Verified rubrics become immutable snapshots upon activation.</div>
-                <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-bottom:14px"><input type="checkbox" id="editor-confirm"> <span>I verified the criteria wording, marks, and grade band weights against the course syllabus.</span></label>
-                <button class="btn btn-dark" id="activate-rubric" type="button" style="width:100%">Activate Rubric for Task →</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 9. CLASSROOM -->
-        <section class="view" id="view-classroom" hidden aria-labelledby="classroom-title">
-          <div class="header-row"><div><div class="eyebrow">Google Classroom Integration</div><h1 id="classroom-title">Connect Coursework</h1><p class="lead">Link Classroom assignments to workbook tasks and flag incomplete submissions.</p></div></div>
-          <div class="card card-pad" style="margin-bottom:16px">
-            <div class="form-grid">
-              <div class="form-field"><label for="class-workbook">Workbook</label><select id="class-workbook"></select></div>
-              <div class="form-field"><label for="class-task">Task</label><select id="class-task"></select></div>
-            </div>
-            <div class="form-field"><label for="class-course">Classroom Course</label><select id="class-course"><option value="">Select Course</option></select></div>
-            <h3>Assignments</h3>
-            <div id="class-coursework"></div>
-          </div>
-          <div class="card card-pad" id="incomplete-messaging-card" hidden>
-            <div class="eyebrow">Flagged Incomplete Work</div>
-            <h3>Prepare Notification Messages</h3>
-            <p class="muted tiny">Review message content before sending to Google Classroom.</p>
-            <div id="classroom-messages-list"></div>
-            <div class="actions" style="margin-top:14px">
-              <button class="btn btn-dark" id="btn-send-classroom-messages" type="button">Approve &amp; Send Messages →</button>
-            </div>
-          </div>
-        </section>
-
-        <!-- 10. REGISTRATION, EVALUATION & WORK SAMPLES (AUDIT) -->
-        <section class="view" id="view-audit" hidden aria-labelledby="audit-title">
-          <div class="header-row"><div><div class="eyebrow">School Audit &amp; Moderation</div><h1 id="audit-title">Registration &amp; Work Samples</h1><p class="lead">Drive destination discovery, Registration &amp; Evaluation prefill, cohort lock, and HIGH/MED/LOW sample placement.</p></div></div>
-          
-          <div class="grid-2" style="margin-bottom:20px">
-            <!-- Step 1 & 2: Cohort Lock & Prefill -->
-            <div class="card card-pad">
-              <div class="eyebrow">Step 1: Cohort Verification</div>
-              <h3>Confirm Cohort Grading</h3>
-              <p class="muted tiny">Verify that all student marks and late deductions are finalised before sample selection.</p>
-              <div id="cohort-status-box" style="margin-bottom:12px"></div>
-              <button class="btn btn-dark" id="btn-lock-cohort" type="button">Verify &amp; Lock Cohort</button>
-              
-              <hr style="margin:20px 0;border:none;border-top:1px solid var(--line)">
-              <div class="eyebrow">Step 2: Designated Document Prefill</div>
-              <h3>Registration &amp; Evaluation</h3>
-              <p class="muted tiny">Auto-populated with outcomes, dates, and grade distribution. Add teacher evaluation via typing or dictation.</p>
-              <div class="form-field"><label for="prefill-doc-id">Document ID (optional)</label><input id="prefill-doc-id" placeholder="Google Doc / Sheet File ID"></div>
-              <div class="form-field">
-                <div style="display:flex;justify-content:space-between;align-items:center"><label for="prefill-variations">Teacher Variations &amp; Evaluation</label><button type="button" class="dictate-btn" id="dictate-variations">🎙 Dictate</button></div>
-                <textarea id="prefill-variations" placeholder="Teaching variations, technical adjustments, and outcome evaluation…"></textarea>
-              </div>
-              <div class="form-field">
-                <div style="display:flex;justify-content:space-between;align-items:center"><label for="prefill-feedback">Student Feedback Summary</label><button type="button" class="dictate-btn" id="dictate-feedback">🎙 Dictate</button></div>
-                <textarea id="prefill-feedback" placeholder="Summary of cohort strengths and areas for next assessment…"></textarea>
-              </div>
-              <button class="btn btn-dark" id="btn-save-prefill" type="button">Preview &amp; Save Entry →</button>
-            </div>
-
-            <!-- Step 3: Work Samples Placement -->
-            <div class="card card-pad">
-              <div class="eyebrow">Step 3: Representative Work Samples</div>
-              <h3>Select HIGH, MED &amp; LOW Samples</h3>
-              <p class="muted tiny">Proposes representative student work based on score percentile or grade bands with teacher override.</p>
-              <div class="form-field"><label for="sample-policy">Selection Policy</label><select id="sample-policy"><option value="score_percentile">Score-Ranked (Top / Median / Lowest)</option><option value="grade_band">Grade Bands (A / C / E Representatives)</option></select></div>
-              <div id="sample-proposals-box" style="margin-bottom:14px"></div>
-              <div class="note" style="margin-bottom:14px">Saving copies the original student folios to the school's audit folders without altering originals.</div>
-              <button class="btn btn-lime" id="btn-save-samples" type="button">Preview &amp; Place Samples in Drive →</button>
-            </div>
-          </div>
-
-          <div class="card card-pad">
-            <div class="eyebrow">Audit Completion Dashboard</div>
-            <h3>Compliance &amp; Gaps Matrix</h3>
-            <p class="muted tiny">Tracks Registration doc completion, valid sample counts (0, 1, &gt;1), and flags misplaced files.</p>
-            <div id="audit-dashboard-matrix"></div>
-          </div>
-        </section>
-
-        <!-- 11. SETTINGS -->
-        <section class="view" id="view-settings" hidden aria-labelledby="settings-title">
-          <div class="header-row"><div><div class="eyebrow">Configuration &amp; Security</div><h1 id="settings-title">Settings</h1><p class="lead">Configure grade scale thresholds, deduction rules, feedback templates, and AI providers safely.</p></div><button class="btn btn-dark" id="save-all-settings" type="button">Save All Settings</button></div>
-          
-          <div class="grid-2">
-            <!-- Grade Bands Thresholds -->
-            <div class="card card-pad">
-              <div class="eyebrow">Grading Policy</div>
-              <h3>A–E Percentage Thresholds</h3>
-              <p class="muted tiny">Validates continuous coverage from 0% to 100% without gaps or overlaps.</p>
-              <div id="thresholds-editor-rows"></div>
-              <div id="thresholds-validation-msg" style="margin-top:8px"></div>
-              <div class="actions" style="margin-top:12px">
-                <button class="btn btn-sm" id="btn-preview-recalc" type="button">Preview Recalculation on Cohort</button>
-              </div>
-              <div id="thresholds-recalc-preview" style="margin-top:10px"></div>
-            </div>
-
-            <!-- Late Deduction Rules -->
-            <div class="card card-pad">
-              <div class="eyebrow">Assessment Rules</div>
-              <h3>Late Submission Deductions</h3>
-              <p class="muted tiny">Configurable deduction rules calculated strictly from raw scores.</p>
-              <div class="form-field"><label for="deduct-type">Rule Type</label><select id="deduct-type"><option value="none">No Penalty</option><option value="percent_per_day">Percentage per Late Day</option><option value="fixed_marks">Fixed Marks Deduction</option><option value="percent_of_achieved">Percentage of Achieved Mark</option></select></div>
-              <div class="form-grid">
-                <div class="form-field"><label for="deduct-rate">Rate (% or marks)</label><input id="deduct-rate" type="number" min="0" max="100" value="10"></div>
-                <div class="form-field"><label for="deduct-grace">Grace Hours</label><input id="deduct-grace" type="number" min="0" value="0"></div>
-              </div>
-              <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:12px"><input type="checkbox" id="deduct-weekends" checked> Exclude Weekends from Late Days</label>
-            </div>
-
-            <!-- Feedback Template -->
-            <div class="card card-pad">
-              <div class="eyebrow">Feedback Generation</div>
-              <h3>Student Feedback Template</h3>
-              <p class="muted tiny">Tokens: {{student}}, {{task}}, {{grade}}, {{final_score}}, {{max_marks}}, {{what_went_well}}, {{areas_for_improvement}}, {{goals}}</p>
-              <div class="form-field"><textarea id="feedback-template-text" style="min-height:100px"></textarea></div>
-              <div class="actions" style="margin-bottom:10px"><button class="btn btn-sm" id="btn-preview-feedback" type="button">Preview with Sample Student</button></div>
-              <div id="feedback-template-preview" class="note" hidden></div>
-            </div>
-
-            <!-- AI Provider & Model Configuration -->
-            <div class="card card-pad">
-              <div class="eyebrow">AI Connection &amp; Security</div>
-              <h3>Gemini API Key</h3>
-              <p class="muted tiny">Stored server-side in Script Properties only. Never sent back to the browser.</p>
-              <div class="form-field"><label for="gemini-key">API Key</label><input id="gemini-key" type="password" placeholder="Paste Gemini key to save"></div>
-              <div class="form-grid">
-                <div class="form-field"><label for="gemini-model">Gemini Model</label><select id="gemini-model"><option value="gemini-2.5-flash">gemini-2.5-flash (Standard)</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fast)</option></select></div>
-                <div class="form-field"><label for="jev-code">JEV Subject Code</label><input id="jev-code" value="9JEV" placeholder="e.g. 9JEV"></div>
-              </div>
-              <div class="actions">
-                <button class="btn btn-dark" id="save-key" type="button">Save Key</button>
-                <button class="btn" id="test-key" type="button">Test AI Connection</button>
-              </div>
-              <p id="key-status" style="font-size:11px;font-weight:700;margin-top:10px"></p>
-            </div>
-          </div>
-        </section>
-
-        <!-- CREATE WORKBOOK -->
-        <section class="view" id="view-create" hidden aria-labelledby="create-title">
-          <div class="header-row"><div><div class="eyebrow">New Project</div><h1 id="create-title">Create Grading Workbook</h1><p class="lead">Sets up a new workbook in your Google Drive library.</p></div></div>
-          <form class="card card-pad" id="create-form" style="max-width:700px">
-            <div class="form-grid three">
-              <div class="form-field"><label for="create-code">Course Code</label><input id="create-code" required placeholder="e.g. 7TECHI"></div>
-              <div class="form-field"><label for="create-task">Task Name</label><input id="create-task" required placeholder="e.g. Water Filtration"></div>
-              <div class="form-field"><label for="create-year">Year</label><input id="create-year" required type="number" value="2026"></div>
-            </div>
-            <div class="form-field"><label for="create-rubric">Shared Rubric Source (optional)</label><select id="create-rubric"><option value="">Select later</option></select></div>
-            <button class="btn btn-dark" type="submit">Create Workbook →</button>
-          </form>
-        </section>
-
-        <!-- ACCESS DENIED -->
-        <section class="view" id="view-denied" hidden aria-labelledby="denied-title">
-          <div class="card card-pad" style="max-width:540px;margin:10vh auto;text-align:center">
-            <div style="font-size:36px;margin-bottom:12px">🔒</div>
-            <h1 id="denied-title" style="font-size:24px">Teacher Access Required</h1>
-            <p class="muted">Sign in with an approved school teacher account. The owner must add your email to <code>LESSON_GRADER_ALLOWED_EMAILS</code>.</p>
-            <button class="btn btn-dark" id="retry-auth" type="button">Retry</button>
-          </div>
-        </section>
-      </main>
-    </div>
-  </div>
-
-  <nav class="mobile-nav" aria-label="Mobile Navigation">
-    <button type="button" class="nav-link active" data-nav="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button>
-    <button type="button" class="nav-link" data-nav="workbooks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span>Workbooks</span></button>
-    <button type="button" class="nav-link" data-nav="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18"/></svg><span>Table</span></button>
-    <button type="button" class="nav-link" data-nav="rubrics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 0-3 0V4z"/></svg><span>Rubrics</span></button>
-    <button type="button" class="nav-link" data-nav="audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 14l2 2 4-4"/></svg><span>Audit</span></button>
-    <button type="button" class="nav-link" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg><span>Settings</span></button>
-  </nav>
-
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
-    <span id="toast-text"></span>
-    <button type="button" id="toast-close" aria-label="Close notification">×</button>
-  </div>
-
-  <script>
-  (function () {
-    'use strict';
-    var $ = function (id) { return document.getElementById(id); };
-    var escape = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); };
-    var state = {
-      view: 'overview',
-      prevView: 'overview',
-      authorised: false,
-      keyConfigured: false,
-      workbooks: [],
-      rubrics: [],
-      workbookId: '',
-      taskName: '',
-      dashboard: null,
-      grade: null,
-      dirty: false,
-      busy: 0,
-      search: '',
-      filter: 'current',
-      editor: { sourceId: '', criteria: [], mappings: {} },
-      settings: null,
-      selectedStudents: {},
-      speechRecognition: null
-    };
-    var toastTimeout;
-
-    function notify(message, error) {
-      $('toast-text').textContent = message || '';
-      $('toast').classList.toggle('error', !!error);
-      $('toast').setAttribute('role', error ? 'alert' : 'status');
-      $('toast').hidden = false;
-      clearTimeout(toastTimeout);
-      if (!error) toastTimeout = setTimeout(function () { $('toast').hidden = true; }, 6000);
-    }
-    $('toast-close').addEventListener('click', function () { $('toast').hidden = true; });
-    function fail(err) { notify(err && err.message || 'Something went wrong.', true); }
-
-    function call(name, args) {
-      return new Promise(function (resolve, reject) {
-        try {
-          if (!window.google || !google.script || !google.script.run) throw new Error('Open this app through Apps Script, or use the local design preview.');
-          var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-          runner[name].apply(runner, args || []);
-        } catch (e) { reject(e); }
-      });
-    }
-
-    function unwrap(res) {
-      if (!res || res.success === false) throw new Error(res && res.message || 'Request failed.');
-      return res.data !== undefined ? res.data : res;
-    }
-
-    async function request(name, args) {
-      state.busy++; $('busy-bar').hidden = false;
-      try { return unwrap(await call(name, args)); }
-      finally { state.busy--; if (!state.busy) $('busy-bar').hidden = true; }
-    }
-
-    function changed() {
-      return state.dirty ? window.confirm('You have unsaved changes. Leave without saving?') : true;
-    }
-
-    function setView(view, title) {
-      state.prevView = state.view;
-      state.view = view;
-      document.querySelectorAll('.view').forEach(function (el) { el.hidden = el.id !== 'view-' + view; });
-      document.querySelectorAll('[data-nav]').forEach(function (el) {
-        var nav = ['task','workbook','grading','create'].indexOf(view) !== -1 ? 'workbooks' : view === 'rubric-editor' ? 'rubrics' : view;
-        el.classList.toggle('active', el.getAttribute('data-nav') === nav);
-      });
-      $('breadcrumb').innerHTML = '<span>Teacher\'s Studio</span><span class="crumb-sep">/</span><strong>' + escape(title || view) + '</strong>';
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }
-
-    function navigate(view) {
-      if (state.view === 'grading' && view !== 'grading' && !changed()) return;
-      state.dirty = false;
-      var titleMap = {
-        overview: 'Overview', workbooks: 'Workbooks', table: 'Class Table',
-        rubrics: 'Rubric Library', classroom: 'Classroom', audit: 'Registration & Samples',
-        settings: 'Settings', create: 'New Workbook'
-      };
-      setView(view, titleMap[view] || view);
-      if (view === 'rubrics') refreshRubrics();
-      if (view === 'classroom') loadClassroom();
-      if (view === 'settings') loadSettings();
-      if (view === 'table') loadClassTable();
-      if (view === 'audit') loadAuditStudio();
-    }
-
-    document.addEventListener('click', function (e) {
-      var el = e.target.closest('[data-nav]');
-      if (el) { e.preventDefault(); navigate(el.getAttribute('data-nav')); }
-    });
-
-    $('top-back-btn').addEventListener('click', function () {
-      if (!changed()) return;
-      if (state.view === 'grading') { openTask(state.taskName); }
-      else if (state.view === 'task') { openWorkbook(state.workbookId); }
-      else if (state.view === 'workbook') { navigate('workbooks'); }
-      else if (state.view === 'rubric-editor') { navigate('rubrics'); }
-      else { navigate(state.prevView || 'overview'); }
-    });
-
-    var backToWb = $('back-to-workbook');
-    if (backToWb) backToWb.addEventListener('click', function () { openWorkbook(state.workbookId); });
-    var backToTsk = $('back-to-task');
-    if (backToTsk) backToTsk.addEventListener('click', function () { openTask(state.taskName); });
-
-    function fillSelect(id, items, placeholder, selected, pickLabel) {
-      var el = $(id);
-      if (!el) return;
-      el.replaceChildren();
-      var empty = new Option(placeholder, ''); el.appendChild(empty);
-      (items || []).forEach(function (entry) { el.appendChild(new Option(pickLabel ? pickLabel(entry) : (entry.name || entry.title), entry.id || entry.value)); });
-      if (selected) el.value = selected;
-    }
-
-    function workbookCard(w) {
-      return '<button type="button" class="workbook-card" data-workbook="' + escape(w.id) + '"><div class="tile-top"><span class="tile-icon">▤</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(w.name) + '</span><span class="tile-meta">Google Sheets · Grading workspace</span></button>';
-    }
-
-    function renderWorkbooks() {
-      var html = state.workbooks.length ? state.workbooks.map(workbookCard).join('') : '<div class="empty">No workbooks found.</div>';
-      $('workbook-list').innerHTML = html;
-      $('overview-list').innerHTML = state.workbooks.slice(0, 3).map(workbookCard).join('') || html;
-      $('overview-workbooks').textContent = state.workbooks.length;
-      ['editor-workbook','class-workbook'].forEach(function (id) { fillSelect(id, state.workbooks, 'Select workbook', state.workbookId); });
-    }
-
-    async function refreshWorkbooks() {
-      try { state.workbooks = await request('apiWebListCandidateWorkbooks'); renderWorkbooks(); }
-      catch (err) { fail(err); }
-    }
-
-    document.addEventListener('click', function (e) {
-      var el = e.target.closest('[data-workbook]');
-      if (el) openWorkbook(el.getAttribute('data-workbook'));
-      var task = e.target.closest('[data-task]');
-      if (task) openTask(task.getAttribute('data-task'));
-      var student = e.target.closest('[data-student]');
-      if (student) openStudent(student.getAttribute('data-student'));
-    });
-
-    async function openWorkbook(id) {
-      if (!changed()) return;
-      state.dirty = false;
-      state.workbookId = id; state.taskName = '';
-      var wb = state.workbooks.find(function (w) { return w.id === id; });
-      $('workbook-title').textContent = wb ? wb.name : 'Choose a task';
-      setView('workbook', 'Tasks');
-      try {
-        var tasks = await request('apiWebListWorkbookTasks', [id]);
-        $('task-list').innerHTML = tasks.length ? tasks.map(function (t) {
-          return '<button class="workbook-card" type="button" data-task="' + escape(t) + '"><div class="tile-top"><span class="tile-icon sky">◇</span><span class="tile-arrow">↗</span></div><span class="tile-title">' + escape(t) + '</span><span class="tile-meta">Open student roster & rubric</span></button>';
-        }).join('') : '<div class="empty">No task sheets found in this workbook.</div>';
-      } catch (err) { fail(err); }
-    }
-
-    async function openTask(task) {
-      if (!changed()) return;
-      state.dirty = false;
-      state.taskName = task;
-      setView('task', task);
-      $('task-title').textContent = task;
-      var wb = state.workbooks.find(function (w) { return w.id === state.workbookId; });
-      $('task-workbook-name').textContent = wb ? wb.name : '';
-      try {
-        state.dashboard = await request('apiWebTaskDashboard', [state.workbookId, task]);
-        renderTaskDashboard();
-      } catch (err) { fail(err); }
-    }
-
-    function renderTaskDashboard() {
-      var d = state.dashboard;
-      if (!d) return;
-      $('stat-total').textContent = d.stats.total;
-      $('stat-awaiting').textContent = d.stats.awaiting;
-      $('stat-approved').textContent = d.stats.approved;
-
-      var subs = d.submissions || [];
-      var html = '<div class="table-container"><table class="data-table"><thead><tr><th><input type="checkbox" id="table-select-all"></th><th>Student</th><th>Class</th><th>Version</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead><tbody>';
-      for (var i = 0; i < subs.length; i++) {
-        var s = subs[i];
-        var isChecked = state.selectedStudents[s.submissionRecordId] ? 'checked' : '';
-        html += '<tr><td><input type="checkbox" class="student-select" data-sub-id="' + escape(s.submissionRecordId) + '" ' + isChecked + '></td>' +
-          '<td><strong>' + escape(s.studentName) + '</strong><br><span class="tiny muted">' + escape(s.studentEmail) + '</span></td>' +
-          '<td>' + escape(s.className || '—') + '</td>' +
-          '<td>v' + escape(s.version) + '</td>' +
-          '<td><span class="pill ' + (s.status === 'Approved' ? 'green' : s.status === 'InReview' ? 'yellow' : 'gray') + '">' + escape(s.status) + '</span></td>' +
-          '<td>' + escape(String(s.updatedAt || '').slice(0, 10)) + '</td>' +
-          '<td><button class="btn btn-sm btn-dark" type="button" data-student="' + escape(s.submissionRecordId) + '">Grade →</button></td></tr>';
-      }
-      html += '</tbody></table></div>';
-      $('student-list').innerHTML = html;
-
-      var selectAll = $('table-select-all');
-      if (selectAll) {
-        selectAll.addEventListener('change', function () {
-          var checked = selectAll.checked;
-          document.querySelectorAll('.student-select').forEach(function (cb) {
-            cb.checked = checked;
-            var id = cb.getAttribute('data-sub-id');
-            if (checked) state.selectedStudents[id] = true; else delete state.selectedStudents[id];
-          });
-        });
-      }
-    }
-
-    // Task Add Student Form Toggle
-    $('task-add-student').addEventListener('click', function () {
-      var form = $('manual-student-form');
-      form.hidden = !form.hidden;
-      if (!form.hidden) $('manual-name').focus();
-    });
-    $('cancel-manual').addEventListener('click', function () {
-      $('manual-student-form').hidden = true;
-    });
-    $('manual-student-form').addEventListener('submit', async function (e) {
-      e.preventDefault();
-      var name = $('manual-name').value;
-      var email = $('manual-email').value;
-      try {
-        var res = await request('apiWebAddManualSubmission', [state.workbookId, state.taskName, name, email]);
-        notify(res.message);
-        $('manual-student-form').hidden = true;
-        $('manual-name').value = '';
-        $('manual-email').value = '';
-        if (res.submissionRecordId) openStudent(res.submissionRecordId);
-        else openTask(state.taskName);
-      } catch (err) { fail(err); }
-    });
-
-    // Bulk AI Grading
-    $('task-bulk-ai').addEventListener('click', async function () {
-      var ids = Object.keys(state.selectedStudents);
-      if (!ids.length) { notify('Select at least one student submission using the checkboxes.', true); return; }
-      if (!window.confirm('Run AI grading proposal on ' + ids.length + ' selected student(s)? Proposals are saved as drafts and require your review.')) return;
-      try {
-        var res = await request('apiWebBulkGradeQueue', [state.workbookId, state.taskName, ids]);
-        notify(res.message);
-        openTask(state.taskName);
-      } catch (err) { fail(err); }
-    });
-
-    // Incomplete submissions flagger
-    $('btn-flag-incomplete').addEventListener('click', async function () {
-      try {
-        var flags = await request('apiWebFlagIncompleteSubmissions', [state.workbookId, state.taskName]);
-        var list = flags.flags.notSubmitted.concat(flags.flags.unreadable);
-        if (!list.length) { notify('All submissions have readable files attached.'); return; }
-        var drafts = await request('apiWebDraftClassroomMessages', [state.workbookId, state.taskName, list, 'Please check and resubmit your files.']);
-        setView('classroom', 'Classroom Messages');
-        $('incomplete-messaging-card').hidden = false;
-        $('classroom-messages-list').innerHTML = drafts.drafts.map(function (m) {
-          return '<div class="card card-pad" style="margin-bottom:10px"><strong>' + escape(m.studentName) + '</strong> (' + escape(m.reason) + ')<div class="note" style="margin-top:6px;white-space:pre-wrap">' + escape(m.message) + '</div></div>';
-        }).join('');
-      } catch (err) { fail(err); }
-    });
-
-    async function openStudent(id) {
-      if (!changed()) return;
-      state.dirty = false;
-      setView('grading', 'Assessment Studio');
-      try {
-        state.grade = await request('apiWebGradeDetail', [state.workbookId, state.taskName, id]);
-        renderGradeStudio();
-      } catch (err) { fail(err); }
-    }
-
-    function renderGradeStudio() {
-      var d = state.grade;
-      if (!d) return;
-      var sub = d.submission;
-      $('student-title').textContent = sub.studentName;
-      $('student-meta').textContent = (sub.className || '') + ' · v' + sub.version + (sub.late ? ' (Late)' : '');
-      $('student-status').textContent = sub.status;
-      $('student-status').className = 'pill ' + (sub.status === 'Approved' ? 'green' : 'yellow');
-
-      // Buttons active/disabled states
-      var isApproved = sub.status === 'Approved';
-      var hasAssessment = !!d.assessmentId;
-      $('save-draft').disabled = isApproved;
-      $('approve-grade').disabled = isApproved || !hasAssessment;
-      $('lock-grade').hidden = !isApproved;
-      $('save-state').textContent = isApproved ? 'Approved snapshot' : hasAssessment ? 'Draft saved' : 'Ready to review';
-
-      // Evidence files
-      $('doc-file-count').textContent = (d.attachments || []).length + ' files';
-      $('evidence-files').innerHTML = (d.attachments || []).length ? d.attachments.map(function (f) {
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">' +
-          '<span>📄 ' + escape(f.fileName) + '</span>' +
-          (f.link ? '<a href="' + escape(f.link) + '" target="_blank" class="btn btn-sm">Open ↗</a>' : '') +
-          '</div>';
-      }).join('') : '<div class="tiny muted">No attached Drive files.</div>';
-
-      // Deep link anchors
-      var anchors = ['Page 1', 'Page 2', 'Page 3', 'Folio Section A', 'Iterative Test 1'];
-      $('deep-link-anchors').innerHTML = anchors.map(function (a) {
-        return '<span class="evidence-anchor">' + escape(a) + '</span> ';
-      }).join('');
-
-      // History
-      $('grade-history').innerHTML = (d.history || []).map(function (h) {
-        return '<div class="tiny" style="padding:4px 0;border-bottom:1px solid #edf1eb"><strong>' + escape(h.action) + '</strong> · ' + escape(String(h.when || '').slice(0, 10)) + '<br><span class="muted">' + escape(h.notes || '') + '</span></div>';
-      }).join('') || '<div class="tiny muted">No prior history.</div>';
-
-      // Criteria Stack
-      var criteria = d.profile ? d.profile.criteria : [];
-      var cMap = d.criteriaMap || {};
-      var stackHtml = '';
-      for (var i = 0; i < criteria.length; i++) {
-        var c = criteria[i];
-        var stateCrit = cMap[c.criterionId] || { checkboxes: {} };
-        stackHtml += '<div class="criterion-card" data-cid="' + escape(c.criterionId) + '">' +
-          '<div class="criterion-head"><div><span class="eyebrow">' + escape(c.part || 'Criterion') + ' · ' + c.maxMarks + ' Marks' + (c.outcome ? ' · ' + c.outcome : '') + '</span><h3>' + escape(c.title) + '</h3></div></div>';
-        
-        for (var b = 0; b < c.bandOrder.length; b++) {
-          var bandKey = c.bandOrder[b];
-          var obs = c.bands[bandKey] || [];
-          stackHtml += '<div style="margin-top:8px"><span class="tiny muted" style="font-weight:800">Band ' + escape(bandKey) + '</span>';
-          for (var o = 0; o < obs.length; o++) {
-            var item = obs[o];
-            var isTicked = stateCrit.checkboxes && stateCrit.checkboxes[item.id] ? 'checked' : '';
-            stackHtml += '<div class="observable-row"><input type="checkbox" class="obs-check" data-check="' + escape(item.id) + '" data-obs-id="' + escape(item.id) + '" ' + isTicked + '><span class="observable-text">' + escape(item.text) + '</span><span class="observable-share">' + (c.maxMarks / Math.max(1, obs.length)).toFixed(1) + 'm</span></div>';
-          }
-          stackHtml += '</div>';
-        }
-
-        // Distinct override
-        if (c.mdOverride && c.mdOverride.id) {
-          var isMdTicked = stateCrit.checkboxes && stateCrit.checkboxes[c.mdOverride.id] ? 'checked' : '';
-          stackHtml += '<div class="observable-row" style="background:#fef9ee;border-color:#fde68a;margin-top:8px"><input type="checkbox" class="obs-check" data-check="' + escape(c.mdOverride.id) + '" data-obs-id="' + escape(c.mdOverride.id) + '" ' + isMdTicked + '><span class="observable-text" style="font-weight:700">Distinct Override: ' + escape(c.mdOverride.text) + '</span></div>';
-        }
-
-        // Teacher written note
-        stackHtml += '<div class="form-field" style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><label>Teacher Observations</label><button type="button" class="dictate-btn" data-dictate-target="' + escape(c.criterionId) + '">🎙 Dictate</button></div><textarea class="crit-note" data-crit-note="' + escape(c.criterionId) + '" placeholder="Specific observable evidence…">' + escape(stateCrit.teacherWrittenNote || '') + '</textarea></div>';
-        stackHtml += '</div>';
-      }
-      $('criterion-list').innerHTML = stackHtml;
-
-      // Feedback
-      var fb = d.feedback || {};
-      $('feedback-well').value = fb.whatWentWell || '';
-      $('feedback-next').value = fb.areasForImprovement || '';
-      $('feedback-goals').value = fb.goalsForNextAssessment || '';
-
-      updateLiveScore();
-    }
-
-    function collectCurrentCriteria() {
-      var d = state.grade;
-      if (!d || !d.profile) return {};
-      var out = {};
-      d.profile.criteria.forEach(function (c) {
-        var checks = {};
-        var card = document.querySelector('.criterion-card[data-cid="' + c.criterionId + '"]');
-        if (card) {
-          card.querySelectorAll('.obs-check').forEach(function (cb) {
-            if (cb.checked) checks[cb.getAttribute('data-obs-id')] = true;
-          });
-          var note = card.querySelector('.crit-note');
-          out[c.criterionId] = {
-            checkboxes: checks,
-            teacherWrittenNote: note ? note.value : '',
-            aiProposedGrade: '',
-            aiEvidence: []
-          };
-        }
-      });
-      return out;
-    }
-
-    function updateLiveScore() {
-      var d = state.grade;
-      if (!d || !d.profile) return;
-      var cur = collectCurrentCriteria();
-      var total = 0;
-      var maxTotal = d.profile.totalMaxMarks || 10;
-      d.profile.criteria.forEach(function (c) {
-        var stateCrit = cur[c.criterionId] || { checkboxes: {} };
-        if (c.mdOverride && stateCrit.checkboxes[c.mdOverride.id]) { total += c.maxMarks; }
-        else {
-          for (var b = 0; b < c.bandOrder.length; b++) {
-            var bandKey = c.bandOrder[b];
-            var obs = c.bands[bandKey] || [];
-            var tickedCount = 0;
-            for (var o = 0; o < obs.length; o++) {
-              if (stateCrit.checkboxes[obs[o].id]) tickedCount++;
-            }
-            if (obs.length) {
-              var w = c.bandWeights && c.bandWeights[bandKey] != null ? c.bandWeights[bandKey] : 1.0;
-              total += tickedCount * ((c.maxMarks * w) / obs.length);
-            }
-          }
-        }
-      });
-      total = Math.min(maxTotal, total);
-      $('live-score').textContent = total.toFixed(1);
-      $('live-score-outof').textContent = ' / ' + maxTotal + ' marks';
-      var pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-      var grade = pct >= 85 ? 'A' : pct >= 75 ? 'B' : pct >= 65 ? 'C' : pct >= 50 ? 'D' : 'E';
-      $('live-grade').textContent = grade + ' (' + Math.round(pct) + '%)';
-    }
-
-    document.addEventListener('change', function (e) {
-      if (e.target.classList.contains('obs-check') || e.target.classList.contains('crit-note') || ['feedback-well','feedback-next','feedback-goals'].indexOf(e.target.id) !== -1) {
-        state.dirty = true;
-        $('save-state').textContent = 'Unsaved changes';
-        updateLiveScore();
-      }
-    });
-
-    $('save-draft').addEventListener('click', async function () {
-      var d = state.grade;
-      if (!d) return;
-      var cur = collectCurrentCriteria();
-      var fb = {
-        whatWentWell: $('feedback-well').value,
-        areasForImprovement: $('feedback-next').value,
-        goalsForNextAssessment: $('feedback-goals').value
-      };
-      try {
-        var res = await request('apiWebSaveDraft', [state.workbookId, state.taskName, d.submission.submissionRecordId, cur, fb, d.revision]);
-        state.dirty = false;
-        notify(res.message);
-        d.revision = res.revision;
-        d.assessmentId = res.revision;
-        $('approve-grade').disabled = false;
-        $('save-state').textContent = 'Draft saved';
-      } catch (err) { fail(err); }
-    });
-
-    $('approve-grade').addEventListener('click', async function () {
-      var d = state.grade;
-      if (!d) return;
-      if (!window.confirm('Approve grade snapshot for ' + d.submission.studentName + '? Approved grades are immutable.')) return;
-      try {
-        var res = await request('apiWebApprove', [state.workbookId, state.taskName, d.submission.submissionRecordId, d.revision]);
-        state.dirty = false;
-        notify(res.message);
-        d.submission.status = 'Approved';
-        $('student-status').textContent = 'Approved';
-        $('student-status').className = 'pill green';
-        $('save-draft').disabled = true;
-        $('approve-grade').disabled = true;
-        $('lock-grade').hidden = false;
-        $('save-state').textContent = 'Approved snapshot';
-      } catch (err) { fail(err); }
-    });
-
-    // Voice Dictation
-    document.addEventListener('click', function (e) {
-      var btn = e.target.closest('.dictate-btn');
-      if (!btn) return;
-      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) { notify('Speech recognition is not supported in this browser. Please type directly.', true); return; }
-      if (btn.classList.contains('active')) {
-        if (state.speechRecognition) state.speechRecognition.stop();
-        btn.classList.remove('active');
-        return;
-      }
-      btn.classList.add('active');
-      var rec = new SpeechRecognition();
-      rec.lang = 'en-AU';
-      rec.continuous = false;
-      rec.interimResults = false;
-      state.speechRecognition = rec;
-      rec.onresult = function (event) {
-        var transcript = event.results[0][0].transcript;
-        var cid = btn.getAttribute('data-dictate-target');
-        if (cid) {
-          var textarea = document.querySelector('.crit-note[data-crit-note="' + cid + '"]');
-          if (textarea) { textarea.value += (textarea.value ? ' ' : '') + transcript; state.dirty = true; }
-        } else if (btn.id === 'dictate-variations') {
-          $('prefill-variations').value += ($('prefill-variations').value ? ' ' : '') + transcript;
-        } else if (btn.id === 'dictate-feedback') {
-          $('prefill-feedback').value += ($('prefill-feedback').value ? ' ' : '') + transcript;
-        }
-        btn.classList.remove('active');
-      };
-      rec.onerror = function () { btn.classList.remove('active'); };
-      rec.onend = function () { btn.classList.remove('active'); };
-      rec.start();
-    });
-
-    // Class Table Matrix
-    async function loadClassTable() {
-      if (!state.workbookId || !state.taskName) {
-        $('class-table-matrix').innerHTML = '<div class="card card-pad" style="text-align:center">Select a workbook and task first.</div>';
-        return;
-      }
-      try {
-        var data = await request('apiWebGetClassTableData', [state.workbookId, state.taskName]);
-        var rows = data.rows || [];
-        var html = '<table class="data-table"><thead><tr><th>Student</th><th>Class</th><th>Task</th><th>Type</th><th>Raw</th><th>Deduction</th><th>Final</th><th>Grade</th><th>Status</th></tr></thead><tbody>';
-        for (var i = 0; i < rows.length; i++) {
-          var r = rows[i];
-          html += '<tr><td><strong>' + escape(r.studentName) + '</strong></td>' +
-            '<td>' + escape(r.className) + '</td>' +
-            '<td>' + escape(r.taskName) + '</td>' +
-            '<td><span class="pill ' + (r.assessmentType === 'Summative' ? 'blue' : 'yellow') + '">' + escape(r.assessmentType) + '</span></td>' +
-            '<td>' + (r.rawScore != null ? r.rawScore.toFixed(1) : '—') + '</td>' +
-            '<td>' + (r.deductionPoints > 0 ? '-' + r.deductionPoints.toFixed(1) : '0') + '</td>' +
-            '<td><strong>' + (r.finalScore != null ? r.finalScore.toFixed(1) : '—') + '</strong></td>' +
-            '<td><span class="pill ' + (r.grade === 'A' ? 'green' : 'gray') + '">' + escape(r.grade) + '</span></td>' +
-            '<td>' + escape(r.status) + '</td></tr>';
-        }
-        html += '</tbody></table>';
-        $('class-table-matrix').innerHTML = html;
-      } catch (err) { fail(err); }
-    }
-
-    $('btn-sync-class-sheet').addEventListener('click', async function () {
-      try {
-        var res = await request('apiWebSyncClassTable', [state.workbookId, state.taskName, {
-          termPair: $('table-term-pair').value,
-          stage: $('table-stage').value,
-          className: $('table-class').value
-        }]);
-        notify(res.message);
-      } catch (err) { fail(err); }
-    });
-
-    // Rubric Library & Editor
-    async function refreshRubrics() {
-      try {
-        state.rubrics = await request('apiWebListSharedRubrics');
-        $('overview-rubrics').textContent = state.rubrics.length;
-        $('shared-rubric-list').innerHTML = state.rubrics.length ? state.rubrics.map(function (r) {
-          return '<div class="workbook-card"><div class="tile-top"><span class="tile-icon">◇</span></div><span class="tile-title">' + escape(r.name) + '</span><span class="tile-meta">Shared Drive Profile</span></div>';
-        }).join('') : '<div class="empty">No shared rubrics found.</div>';
-      } catch (err) { fail(err); }
-    }
-
-    $('new-manual-rubric').addEventListener('click', function () {
-      setView('rubric-editor', 'Build Task Rubric');
-      ['editor-workbook'].forEach(function (id) { fillSelect(id, state.workbooks, 'Select workbook', state.workbookId); });
-      $('editor-criteria').innerHTML = '<div class="card card-pad editor-criterion" style="margin-bottom:12px"><h4>Criterion 1</h4><div class="form-field"><label>Title</label><input class="crit-title" value="Functional mechanism"></div><div class="form-field"><label>Max Marks</label><input type="number" class="crit-marks" value="10"></div></div>';
-      $('editor-count').textContent = '1 Criterion';
-      $('editor-total').textContent = '10 Total Marks';
-    });
-
-    // Audit Studio (Registration & Samples)
-    async function loadAuditStudio() {
-      if (!state.workbookId || !state.taskName) {
-        $('cohort-status-box').innerHTML = '<div class="tiny muted">Select a workbook and task first.</div>';
-        return;
-      }
-      try {
-        var check = await request('apiWebVerifyGradingComplete', [state.workbookId, state.taskName]);
-        $('cohort-status-box').innerHTML = check.complete ?
-          '<div class="pill green">All ' + check.total + ' student grades finalised and verified.</div>' :
-          '<div class="pill yellow">' + check.pendingCount + ' of ' + check.total + ' students pending completion.</div>';
-
-        var sugg = await request('apiWebSuggestWorkSamples', [state.workbookId, state.taskName, $('sample-policy').value]);
-        $('sample-proposals-box').innerHTML = '<div style="display:flex;flex-direction:column;gap:8px">' +
-          '<div class="note"><strong>HIGH Sample:</strong> ' + escape(sugg.proposals.high.studentName) + ' (' + sugg.proposals.high.score + 'm, ' + sugg.proposals.high.grade + ') — ' + escape(sugg.proposals.high.reason) + '</div>' +
-          '<div class="note"><strong>MED Sample:</strong> ' + escape(sugg.proposals.med.studentName) + ' (' + sugg.proposals.med.score + 'm, ' + sugg.proposals.med.grade + ') — ' + escape(sugg.proposals.med.reason) + '</div>' +
-          '<div class="note"><strong>LOW Sample:</strong> ' + escape(sugg.proposals.low.studentName) + ' (' + sugg.proposals.low.score + 'm, ' + sugg.proposals.low.grade + ') — ' + escape(sugg.proposals.low.reason) + '</div>' +
-          '</div>';
-
-        var dash = await request('apiWebGetAuditDashboard', [state.workbookId]);
-        $('audit-dashboard-matrix').innerHTML = '<div class="table-container"><table class="data-table"><thead><tr><th>Task</th><th>Approved Grades</th><th>Registration Doc</th><th>Samples Placed</th><th>Compliance</th></tr></thead><tbody>' +
-          (dash.tasks || []).map(function (t) {
-            return '<tr><td><strong>' + escape(t.taskName) + '</strong></td>' +
-              '<td>' + t.approvedGradesCount + '</td>' +
-              '<td><span class="pill ' + (t.registrationDocStatus === 'Complete' ? 'green' : 'yellow') + '">' + escape(t.registrationDocStatus) + '</span></td>' +
-              '<td>' + t.sampleCounts.total + ' / 3</td>' +
-              '<td><span class="pill ' + (t.auditComplete ? 'green' : 'gray') + '">' + (t.auditComplete ? 'Compliant' : 'In Progress') + '</span></td></tr>';
-          }).join('') + '</tbody></table></div>';
-      } catch (err) { fail(err); }
-    }
-
-    $('btn-lock-cohort').addEventListener('click', async function () {
-      if (!window.confirm('Lock cohort grading for ' + state.taskName + '?')) return;
-      try {
-        var res = await request('apiWebSetGradingComplete', [state.workbookId, state.taskName, true]);
-        notify(res.message);
-        loadAuditStudio();
-      } catch (err) { fail(err); }
-    });
-
-    $('btn-save-prefill').addEventListener('click', async function () {
-      var fieldValues = {
-        unitName: state.taskName,
-        teacher: $('account-email').textContent,
-        dates: new Date().toISOString().slice(0, 10),
-        syllabusOutcomes: 'DT5-1, DT5-2, DT5-3',
-        gradeDistribution: 'Approved cohort distribution',
-        teacherVariations: $('prefill-variations').value,
-        curriculumAdjustments: 'Scaffolding provided',
-        studentFeedbackSummary: $('prefill-feedback').value
-      };
-      try {
-        var res = await request('apiWebSaveRegistrationPrefill', [state.workbookId, state.taskName, $('prefill-doc-id').value, fieldValues, true]);
-        notify(res.message);
-        loadAuditStudio();
-      } catch (err) { fail(err); }
-    });
-
-    $('btn-save-samples').addEventListener('click', async function () {
-      var sugg = await request('apiWebSuggestWorkSamples', [state.workbookId, state.taskName, $('sample-policy').value]);
-      if (!window.confirm('Place HIGH, MED, and LOW work sample copies in Drive for ' + state.taskName + '?')) return;
-      try {
-        var res = await request('apiWebSaveWorkSamples', [state.workbookId, state.taskName, sugg.proposals, {}, true]);
-        notify(res.message);
-        loadAuditStudio();
-      } catch (err) { fail(err); }
-    });
-
-    // Settings
-    async function loadSettings() {
-      try {
-        var data = await request('apiWebGetSettings');
-        state.settings = data.settings;
-        renderSettings();
-      } catch (err) { fail(err); }
-    }
-
-    function renderSettings() {
-      var s = state.settings;
-      if (!s) return;
-      var tRows = '';
-      (s.thresholds || []).forEach(function (b, idx) {
-        tRows += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
-          '<strong style="width:24px">' + escape(b.letter) + '</strong>' +
-          '<input type="number" class="thresh-min" data-idx="' + idx + '" value="' + b.min + '" style="width:80px"> % to ' +
-          '<input type="number" class="thresh-max" data-idx="' + idx + '" value="' + b.max + '" style="width:80px"> %' +
-          '</div>';
-      });
-      $('thresholds-editor-rows').innerHTML = tRows;
-      $('deduct-type').value = s.deductions.type || 'none';
-      $('deduct-rate').value = s.deductions.rate || 10;
-      $('feedback-template-text').value = s.feedbackTemplate || '';
-      $('gemini-model').value = s.aiProviders.geminiModel || 'gemini-2.5-flash';
-      $('jev-code').value = s.aiProviders.jevSubjectCode || '9JEV';
-    }
-
-    $('save-key').addEventListener('click', async function () {
-      var key = $('gemini-key').value;
-      if (!key) { notify('Please enter a Gemini API key to save.', true); return; }
-      try {
-        var res = await request('apiWebSetGeminiKey', [key]);
-        $('gemini-key').value = '';
-        $('key-status').textContent = '✓ Key configured in Script Properties';
-        $('key-status').style.color = '#2e7d32';
-        notify(res.message || 'Key saved securely.');
-      } catch (err) { fail(err); }
-    });
-
-    $('save-all-settings').addEventListener('click', async function () {
-      var bands = [];
-      document.querySelectorAll('.thresh-min').forEach(function (el) {
-        var idx = el.getAttribute('data-idx');
-        var maxEl = document.querySelector('.thresh-max[data-idx="' + idx + '"]');
-        var letter = ['A','B','C','D','E'][idx];
-        bands.push({ letter: letter, min: parseFloat(el.value), max: parseFloat(maxEl.value) });
-      });
-      var patch = {
-        deductions: {
-          type: $('deduct-type').value,
-          rate: parseFloat($('deduct-rate').value),
-          maxDeductionPercent: 50,
-          excludeWeekends: $('deduct-weekends').checked,
-          graceHours: parseFloat($('deduct-grace').value) || 0,
-          minFloor: 0
-        },
-        feedbackTemplate: $('feedback-template-text').value,
-        aiProviders: {
-          defaultProvider: 'gemini',
-          geminiModel: $('gemini-model').value,
-          jevSubjectCode: $('jev-code').value
-        }
-      };
-      try {
-        var res = await request('apiWebSaveSettings', [patch]);
-        notify(res.message);
-        $('gemini-key').value = '';
-      } catch (err) { fail(err); }
-    });
-
-    $('btn-preview-recalc').addEventListener('click', async function () {
-      if (!state.workbookId) { notify('Select a workbook to preview recalculation.', true); return; }
-      var bands = [];
-      document.querySelectorAll('.thresh-min').forEach(function (el) {
-        var idx = el.getAttribute('data-idx');
-        var maxEl = document.querySelector('.thresh-max[data-idx="' + idx + '"]');
-        bands.push({ letter: ['A','B','C','D','E'][idx], min: parseFloat(el.value), max: parseFloat(maxEl.value) });
-      });
-      try {
-        var prev = await request('apiWebPreviewThresholdRecalc', [state.workbookId, bands]);
-        $('thresholds-recalc-preview').innerHTML = '<div class="note">Evaluated ' + prev.preview.totalEvaluated + ' student(s). ' + prev.preview.changedCount + ' grade change(s) would occur upon review.</div>';
-      } catch (err) { fail(err); }
-    });
-
-    $('test-key').addEventListener('click', async function () {
-      $('key-status').textContent = 'Testing connection…';
-      try {
-        var res = await request('apiWebTestGeminiKey');
-        $('key-status').textContent = '✓ ' + (res.message || 'Connected');
-        $('key-status').style.color = '#2e7d32';
-      } catch (err) {
-        $('key-status').textContent = '✗ ' + err.message;
-        $('key-status').style.color = '#c62828';
-      }
-    });
-
-    // Formative Rubric Generation
-    $('btn-generate-formative').addEventListener('click', async function () {
-      var title = window.prompt('Enter assignment title for formative rubric generation:', 'Water Filtration Interim');
-      if (!title) return;
-      try {
-        var res = await request('apiWebGenerateFormativeRubric', [{ title: title, maxMarks: 20 }]);
-        notify('Generated draft formative rubric for ' + title + '. Review before activation.');
-        navigate('rubrics');
-      } catch (err) { fail(err); }
-    });
-
-    async function init() {
-      if (window.__LESSON_GRADER_PREVIEW__) {
-        document.body.classList.add('preview-mode');
-        $('gemini-key').disabled = true;
-        $('save-key').disabled = true;
-        $('upload-rubric').disabled = true;
-      }
-      try {
-        var auth = await request('apiWebAuthStatus');
-        if (!auth.authorised) { setView('denied', 'Access Denied'); return; }
-        state.authorised = true;
-        $('account-email').textContent = auth.email;
-        $('user-avatar').textContent = auth.email.slice(0, 2).toUpperCase();
-        await refreshWorkbooks();
-        setView('overview', 'Overview');
-      } catch (err) { setView('denied', 'Access Denied'); }
-    }
-
-    init();
-  })();
-  </script>
+          <button class="btn" type="button" id="upload-rubric">Extract into Shared Rubrics</button>
+          <p class="small muted">The extracted rows are a draft. Check every criterion, mark and band before activating.</p>
+        </details>
+      </div>
+      <div class="card">
+        <div class="row between"><h2>Rows <span class="muted small" id="rubric-count"></span></h2><button class="btn small" type="button" id="rubric-add-row">Add row</button></div>
+        <label class="field"><span>Rubric name</span><input type="text" id="rubric-name" maxlength="160"></label>
+        <div class="table-wrap"><table class="simple" id="rubric-table" aria-label="Rubric rows">
+          <thead><tr><th scope="col">Criterion</th><th scope="col">Part</th><th scope="col">Marks</th><th scope="col">Band</th><th scope="col">Observable</th><th scope="col">Outcome</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+          <tbody></tbody></table></div>
+        <div id="rubric-weights"></div>
+        <div id="rubric-validation" aria-live="polite"></div>
+        <label class="check"><input type="checkbox" id="rubric-confirm"> I checked the criteria wording, marks and band weights.</label>
+        <button class="btn primary" type="button" id="rubric-activate">Activate as new version</button>
+        <p class="small muted">Activation never changes existing drafts or approvals; they stay pinned to the version they were marked with.</p>
+      </div>
+    </section>
+
+    <!-- 5. Create workbook -->
+    <section id="view-create" hidden aria-labelledby="create-title">
+      <nav class="context" aria-label="Location"><a href="#/home">‹ Workbooks</a></nav>
+      <h1 id="create-title">New grading workbook</h1>
+      <p class="muted">One workbook per class task, created in <em>My Drive › Graded Assessments</em>.</p>
+      <form class="card" id="create-form" novalidate>
+        <fieldset class="field"><legend class="small muted">Source</legend>
+          <label class="check"><input type="radio" name="create-mode" value="classroom" checked> From a Google Classroom assignment</label>
+          <label class="check"><input type="radio" name="create-mode" value="manual"> Without Classroom (add students manually)</label>
+        </fieldset>
+        <div id="create-classroom">
+          <label class="field"><span>Class</span><select id="create-course"></select></label>
+          <label class="field"><span>Assignment <span class="hint">every assignment is listed, including ones without due dates</span></span><select id="create-coursework"></select></label>
+        </div>
+        <div class="grid three">
+          <label class="field"><span>Course code</span><input type="text" id="create-code" maxlength="20" placeholder="e.g. 9DAT1" required><span class="hint">Starts with 7–12 (sets the Stage folder).</span></label>
+          <label class="field"><span>Task name</span><input type="text" id="create-task" maxlength="100" required></label>
+          <label class="field"><span>Year</span><input type="number" id="create-year" min="2020" max="2099" required></label>
+        </div>
+        <div class="grid two">
+          <label class="field"><span>Category folder</span><input type="text" id="create-category" maxlength="80" placeholder="e.g. Projects"></label>
+          <label class="field"><span>Shared rubric <span class="hint">optional — reviewed before activation</span></span><select id="create-rubric"></select></label>
+        </div>
+        <div id="create-errors" aria-live="assertive"></div>
+        <button class="btn primary" type="submit" id="create-submit">Create workbook</button>
+      </form>
+    </section>
+
+    <!-- 6. Link Classroom assignment -->
+    <section id="view-link" hidden aria-labelledby="link-title">
+      <nav class="context" aria-label="Location"><a href="#" id="link-back">‹ Back to class</a></nav>
+      <h1 id="link-title">Link a Classroom assignment</h1>
+      <div class="card">
+        <label class="field"><span>Class</span><select id="link-course"></select></label>
+        <label class="field"><span>Assignment</span><select id="link-coursework"></select></label>
+        <button class="btn primary" type="button" id="link-save">Link to this task</button>
+      </div>
+    </section>
+
+    <!-- 7. Evaluation / register -->
+    <section id="view-register" hidden aria-labelledby="register-title">
+      <nav class="context" aria-label="Location"><a href="#" id="register-back">‹ Back to class</a></nav>
+      <h1 id="register-title">Evaluation and register entry</h1>
+      <div class="card"><h2>From this workbook</h2><dl id="register-context" class="small"></dl></div>
+      <div class="card">
+        <label class="field"><span>Register Google Doc ID <span class="hint">optional — leave blank to record in this workbook's EvaluationRegister sheet</span></span>
+          <input type="text" id="register-doc" maxlength="200"></label>
+        <button class="btn small" type="button" id="register-check">Check destination</button>
+        <p class="small" id="register-destination" aria-live="polite"></p>
+        <div class="field"><div class="label-row"><label for="reg-evaluation">Teacher evaluation</label><button class="btn small dictate" type="button" data-dictate="reg-evaluation" aria-pressed="false">Dictate</button></div>
+          <textarea id="reg-evaluation"></textarea><div class="dictation-status" data-dictation-status="reg-evaluation" aria-live="polite"></div></div>
+        <div class="field"><div class="label-row"><label for="reg-variations">Teaching variations</label><button class="btn small dictate" type="button" data-dictate="reg-variations" aria-pressed="false">Dictate</button></div>
+          <textarea id="reg-variations"></textarea><div class="dictation-status" data-dictation-status="reg-variations" aria-live="polite"></div></div>
+        <div class="field"><div class="label-row"><label for="reg-adjustments">Adjustments</label><button class="btn small dictate" type="button" data-dictate="reg-adjustments" aria-pressed="false">Dictate</button></div>
+          <textarea id="reg-adjustments"></textarea><div class="dictation-status" data-dictation-status="reg-adjustments" aria-live="polite"></div></div>
+        <div class="field"><div class="label-row"><label for="reg-summary">Student feedback summary</label><button class="btn small dictate" type="button" data-dictate="reg-summary" aria-pressed="false">Dictate</button></div>
+          <textarea id="reg-summary"></textarea><div class="dictation-status" data-dictation-status="reg-summary" aria-live="polite"></div></div>
+        <button class="btn primary" type="button" id="register-commit">Review and commit…</button>
+      </div>
+    </section>
+
+    <!-- 8. Class results, messages and samples -->
+    <section id="view-results" hidden aria-labelledby="results-title">
+      <nav class="context" aria-label="Location"><a href="#" id="results-back">‹ Back to class</a></nav>
+      <h1 id="results-title">Class results</h1>
+      <div class="card">
+        <div class="row between"><h2>Current results</h2>
+          <div class="row"><label class="sr-only" for="results-term">Term</label><input type="text" id="results-term" placeholder="Term (optional)" maxlength="40">
+            <button class="btn small" type="button" id="results-sync">Copy to ClassTracking sheet</button></div></div>
+        <div class="table-wrap" id="results-table"></div>
+      </div>
+      <div class="card">
+        <h2>Incomplete or unreadable work</h2>
+        <p class="small muted">Drafts only. Classroom has no messaging API, so nothing is sent from here.</p>
+        <button class="btn small" type="button" id="results-flags">Find incomplete work</button>
+        <div id="results-messages"></div>
+      </div>
+      <div class="card">
+        <h2>Work samples (HIGH / MED / LOW)</h2>
+        <label class="field"><span>Selection policy</span><select id="samples-policy"><option value="score_percentile">Top / median / lowest score</option><option value="grade_band">A / C / D–E representatives</option></select></label>
+        <button class="btn small" type="button" id="samples-suggest">Suggest samples</button>
+        <div id="samples-list"></div>
+        <div class="grid three">
+          <label class="field"><span>HIGH folder ID</span><input type="text" id="samples-high"></label>
+          <label class="field"><span>MED folder ID</span><input type="text" id="samples-med"></label>
+          <label class="field"><span>LOW folder ID</span><input type="text" id="samples-low"></label>
+        </div>
+        <button class="btn" type="button" id="samples-save">Copy samples to folders…</button>
+      </div>
+    </section>
+
+    <!-- 9. Settings -->
+    <section id="view-settings" hidden aria-labelledby="settings-title">
+      <h1 id="settings-title">Settings</h1>
+      <div class="card"><div class="row between"><h2>Health check</h2><button class="btn small" type="button" id="health-run">Run checks</button></div>
+        <p class="small muted">Read-only. Includes the workbook you opened last, if any.</p><div id="health-results"></div></div>
+      <div class="card"><h2>Automatic sync</h2><p id="trigger-status" class="small"></p>
+        <div class="row"><button class="btn" type="button" id="triggers-install">Install hourly sync &amp; AI queue</button><button class="btn" type="button" id="triggers-remove">Remove</button></div></div>
+      <div class="card">
+        <h2>Output format</h2>
+        <div class="grid two">
+          <label class="field"><span>Grade shown to students</span><select id="out-grade">
+            <option value="letter">Letter (B)</option><option value="mark">Mark (31.4 / 40)</option><option value="percent">Percent (78.4%)</option>
+            <option value="letter+mark">Letter and mark</option><option value="letter+percent">Letter and percent</option></select></label>
+          <label class="field"><span>Number sent to Classroom</span><select id="out-classroom">
+            <option value="scaled-points">Scaled to assignment points</option><option value="raw-points">Raw marks (totals must match)</option>
+            <option value="percent">Percent (100-point assignment)</option><option value="none">Do not send a grade</option></select>
+            <span class="hint">Classroom stores numbers only. Letters and comments are produced as text to paste.</span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="out-firstname"> Open the comment with the student's first name (used once)</label>
+        <label class="check"><input type="checkbox" id="out-include-grade"> Include the grade in the comment</label>
+        <label class="field"><span>Comment template</span><textarea id="out-template"></textarea>
+          <span class="hint">Fields: {{opening}} {{grade_display}} {{what_went_well}} {{areas_for_improvement}} {{goals}} {{task}} {{first_name}}</span></label>
+        <button class="btn primary" type="button" id="out-save">Save output format</button>
+      </div>
+      <div class="card">
+        <h2>AI providers</h2>
+        <div class="grid two">
+          <label class="field"><span>Drafting provider</span><select id="ai-draft"><option value="gemini">Gemini (receives files)</option><option value="jev">JEV (receives de-identified text only)</option></select></label>
+          <label class="field"><span>Image reading for JEV</span><select id="ai-vision"><option value="none">None (images not read)</option><option value="qwen">Qwen 3-VL (owner-hosted)</option><option value="gemini">Gemini</option></select></label>
+          <label class="field"><span>Gemini model</span><input type="text" id="ai-gemini-model" maxlength="60"></label>
+          <label class="field"><span>Qwen model name</span><input type="text" id="ai-qwen-model" maxlength="80"></label>
+          <label class="field"><span>JEV model name</span><input type="text" id="ai-jev-model" maxlength="80"></label>
+        </div>
+        <button class="btn" type="button" id="ai-save">Save provider choices</button>
+        <h3>Gemini key</h3>
+        <label class="field"><span>API key <span class="hint">stored in Script Properties; never shown again</span></span><input type="password" id="gemini-key" autocomplete="off"></label>
+        <div class="row"><button class="btn" type="button" id="gemini-save">Save key</button><button class="btn" type="button" id="gemini-test">Test</button></div>
+        <h3>Qwen 3-VL endpoint</h3>
+        <div class="grid two"><label class="field"><span>Endpoint (https, OpenAI-compatible)</span><input type="text" id="qwen-endpoint"></label>
+          <label class="field"><span>Key <span class="hint">optional</span></span><input type="password" id="qwen-key" autocomplete="off"></label></div>
+        <div class="row"><button class="btn" type="button" id="qwen-save">Save</button><button class="btn" type="button" id="qwen-test">Test</button></div>
+        <h3>JEV endpoint</h3>
+        <div class="grid two"><label class="field"><span>Endpoint (https, OpenAI-compatible)</span><input type="text" id="jev-endpoint"></label>
+          <label class="field"><span>Key <span class="hint">optional</span></span><input type="password" id="jev-key" autocomplete="off"></label></div>
+        <div class="row"><button class="btn" type="button" id="jev-save">Save</button><button class="btn" type="button" id="jev-test">Test</button></div>
+        <p class="small" id="ai-status" aria-live="polite"></p>
+      </div>
+      <div class="card">
+        <h2>Drafting prompts</h2>
+        <p class="small muted">A new prompt must be tested against approved work before it can be used. Tests never change any assessment.</p>
+        <div id="prompt-list"></div>
+        <label class="field"><span>New prompt version</span><textarea id="prompt-text" placeholder="Include {{task}} and ask for the JSON reply format."></textarea></label>
+        <button class="btn" type="button" id="prompt-create">Save as draft version</button>
+      </div>
+      <div class="card">
+        <h2>Feedback examples for refinement</h2>
+        <p class="small muted">Pasted examples are de-identified against the current class roster before storage.</p>
+        <label class="sr-only" for="example-text">Feedback example</label>
+        <textarea id="example-text"></textarea>
+        <div class="row"><button class="btn" type="button" id="example-preview">Check de-identification</button><button class="btn" type="button" id="example-save" disabled>Save example</button></div>
+        <pre class="text" id="example-result" hidden></pre>
+      </div>
+      <div class="card">
+        <h2>Grade scale for the current workbook</h2>
+        <div id="scale-view" class="small"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Dialogs -->
+  <dialog id="dlg-approve" aria-labelledby="dlg-approve-title">
+    <div class="dlg-body"><h2 id="dlg-approve-title">Review before approval</h2><div id="approve-body"></div></div>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" id="approve-confirm">Approve and save (does not publish)</button></div>
+  </dialog>
+  <dialog id="dlg-publish" aria-labelledby="dlg-publish-title">
+    <div class="dlg-body"><h2 id="dlg-publish-title">Publish to Classroom</h2><div id="publish-body"></div>
+      <div id="publish-controls">
+        <label class="check"><input type="checkbox" id="publish-return"> Also return to students now (they will see the grade)</label>
+        <label class="field"><span>Type PUBLISH to confirm</span><input type="text" id="publish-typed" autocomplete="off"></label>
+      </div></div>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="button" id="publish-confirm">Publish</button></div>
+  </dialog>
+  <dialog id="dlg-unlock" aria-labelledby="dlg-unlock-title">
+    <div class="dlg-body"><h2 id="dlg-unlock-title">Unlock a final assessment</h2>
+      <p>Unlocking returns this assessment to "Teacher-approved". The approved result does not change; start a reassessment to change it.</p>
+      <label class="field"><span>Reason</span><textarea id="unlock-reason" maxlength="500"></textarea></label>
+      <label class="field"><span>Type UNLOCK to confirm</span><input type="text" id="unlock-typed" autocomplete="off"></label></div>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn danger" type="button" id="unlock-confirm">Unlock</button></div>
+  </dialog>
+  <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+    <div class="dlg-body"><h2 id="dlg-confirm-title">Confirm</h2><div id="confirm-body"></div></div>
+    <div class="dlg-actions" id="confirm-actions"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-close" aria-label="Dismiss">×</button></div>
+
+  <?!= include('WebAppClient'); ?>
 </body>
 </html>

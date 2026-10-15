@@ -1,0 +1,1354 @@
+<script>
+/* Lesson Grader browser client.
+ * - Every server call goes through Api (google.script.run with success AND
+ *   failure handlers). Nothing here talks to Google directly.
+ * - Data from the server is rendered with textContent only (el()); no
+ *   student or AI text is ever parsed as HTML.
+ * - Responses for a superseded workbook/task/student are discarded (seq guard),
+ *   so switching context can never paint or save the wrong student.
+ * - Local storage holds only conveniences (last opened workbook/task); the
+ *   workbook in Google Sheets is always the source of truth. */
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var slice = Array.prototype.slice;
+
+  /* ---------- DOM helpers ------------------------------------------------ */
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === undefined || v === null || v === false) return;
+      if (k === 'text') node.textContent = v;
+      else if (k === 'className') node.className = v;
+      else if (k === 'checked' || k === 'disabled' || k === 'hidden' || k === 'open' || k === 'selected') node[k] = !!v;
+      else if (k === 'value') node.value = v;
+      else if (k.indexOf('on') === 0 && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? '' : String(v));
+    });
+    (Array.isArray(children) ? children : children == null ? [] : [children]).forEach(function (c) {
+      if (c == null || c === false) return;
+      node.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    return node;
+  }
+  function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); return node; }
+  function fill(node, children) { clear(node); (children || []).forEach(function (c) { if (c) node.appendChild(c); }); return node; }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    try { return d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+    catch (e) { return d.toISOString().slice(0, 16).replace('T', ' '); }
+  }
+  function fmtNum(n, dp) { var x = Number(n); return isFinite(x) ? x.toFixed(dp == null ? 1 : dp).replace(/\.0+$/, '') : '—'; }
+  function safeHttps(url) { return /^https:\/\/(drive|docs|classroom)\.google\.com\//.test(String(url || '')) ? String(url) : ''; }
+
+  /* ---------- convenience storage (never authoritative) ------------------ */
+  var Store = {
+    get: function (k) { try { return JSON.parse(window.localStorage.getItem('lessonGrader.' + k)); } catch (e) { return null; } },
+    set: function (k, v) { try { window.localStorage.setItem('lessonGrader.' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
+  };
+
+  /* ---------- API wrapper ------------------------------------------------- */
+  var Api = (function () {
+    var busy = 0;
+    function setBusy(delta) { busy = Math.max(0, busy + delta); $('busy').hidden = busy === 0; }
+    function call(name) {
+      var args = slice.call(arguments, 1);
+      setBusy(1);
+      return new Promise(function (resolve, reject) {
+        try {
+          if (!window.google || !google.script || !google.script.run) throw new Error('Open this page through the Apps Script web app address.');
+          var runner = google.script.run
+            .withSuccessHandler(function (res) { setBusy(-1); resolve(res); })
+            .withFailureHandler(function (err) { setBusy(-1); reject(err instanceof Error ? err : new Error(err && err.message || String(err))); });
+          if (typeof runner[name] !== 'function') throw new Error('Unknown server action: ' + name);
+          runner[name].apply(runner, args);
+        } catch (e) { setBusy(-1); reject(e); }
+      });
+    }
+    /* Resolves with res.data (or res); rejects when success === false, keeping the result on err.result. */
+    function data() {
+      return call.apply(null, arguments).then(function (res) {
+        if (!res || res.success === false) {
+          var e = new Error(res && res.message || 'The request did not succeed.');
+          e.result = res;
+          throw e;
+        }
+        return res.data !== undefined ? res.data : res;
+      });
+    }
+    return { call: call, data: data };
+  })();
+
+  /* ---------- notifications & dialogs ------------------------------------ */
+  var toastTimer;
+  function toast(message, isError) {
+    $('toast-text').textContent = message || '';
+    $('toast').classList.toggle('error', !!isError);
+    $('toast').setAttribute('role', isError ? 'alert' : 'status');
+    $('toast').hidden = false;
+    clearTimeout(toastTimer);
+    if (!isError) toastTimer = setTimeout(function () { $('toast').hidden = true; }, 7000);
+  }
+  function fail(err) { toast(err && err.message ? err.message : 'Something went wrong.', true); }
+  $('toast-close').addEventListener('click', function () { $('toast').hidden = true; });
+
+  var lastFocus = null;
+  function openDialog(d) {
+    lastFocus = document.activeElement;
+    if (typeof d.showModal === 'function') { try { d.showModal(); } catch (e) { d.setAttribute('open', ''); } }
+    else d.setAttribute('open', '');
+    var first = d.querySelector('input, textarea, button:not([data-close])');
+    if (first) first.focus();
+  }
+  function closeDialog(d) {
+    if (typeof d.close === 'function') { try { d.close(); } catch (e) { d.removeAttribute('open'); } }
+    d.removeAttribute('open');
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  document.addEventListener('click', function (e) {
+    var c = e.target.closest('[data-close]');
+    if (c) closeDialog(c.closest('dialog'));
+  });
+
+  /** Generic confirmation. actions: [{label, value, primary, danger}] → Promise(value | null). */
+  function ask(title, body, actions) {
+    return new Promise(function (resolve) {
+      var d = $('dlg-confirm');
+      $('dlg-confirm-title').textContent = title;
+      fill($('confirm-body'), Array.isArray(body) ? body : [typeof body === 'string' ? el('p', { text: body }) : body]);
+      var bar = clear($('confirm-actions'));
+      (actions || [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }]).forEach(function (a) {
+        bar.appendChild(el('button', { type: 'button', className: 'btn' + (a.primary ? ' primary' : '') + (a.danger ? ' danger' : ''), text: a.label,
+          onclick: function () { closeDialog(d); resolve(a.value); } }));
+      });
+      openDialog(d);
+    });
+  }
+
+  /* BEGIN SCORING MIRROR — must match RubricEngine.gs; tests/scoring-mirror.test.cjs
+     compares both on random rubrics. Display only: the server recalculates on save. */
+  var Scoring = (function () {
+    var DEFAULT_BANDS = [{ letter: 'A', min: 85 }, { letter: 'B', min: 75 }, { letter: 'C', min: 65 }, { letter: 'D', min: 50 }, { letter: 'E', min: 0 }];
+    function normalisePercent(p) { var n = Number(p); return isFinite(n) ? Math.round(n * 1e9) / 1e9 : 0; }
+    function overallLetter(percent, bands) {
+      var b = bands && bands.length ? bands.slice().sort(function (x, y) { return y.min - x.min; }) : DEFAULT_BANDS;
+      var p = normalisePercent(percent);
+      for (var i = 0; i < b.length; i++) if (p >= b[i].min) return b[i].letter;
+      return b.length ? b[b.length - 1].letter : 'E';
+    }
+    function scoreCriterion(c, checks, bands) {
+      var max = Number(c.maxMarks) || 0;
+      function on(id) { return checks[id] === true; }
+      if (c.mdOverride && on(c.mdOverride.id)) return { points: max, maxMarks: max, rawPoints: max, percent: 100, grade: overallLetter(100, bands), distinctOverride: true };
+      var total = 0;
+      (c.bandOrder || []).forEach(function (key) {
+        var items = c.bands[key] || [];
+        var n = items.filter(function (o) { return on(o.id); }).length;
+        if (items.length) total += n * ((max * Number(c.bandWeights[key])) / items.length);
+      });
+      var raw = total;
+      total = Math.min(max, total);
+      var pct = normalisePercent(max > 0 ? total / max * 100 : 0);
+      return { points: total, maxMarks: max, rawPoints: raw, percent: pct, grade: overallLetter(pct, bands), distinctOverride: false };
+    }
+    function scoreProfile(profile, states) {
+      var bands = profile.gradeScaleBands;
+      var out = { criteria: {}, totalPoints: 0, totalMaxMarks: 0 };
+      profile.criteria.forEach(function (c) {
+        var r = scoreCriterion(c, ((states || {})[c.criterionId] || {}).checkboxes || {}, bands);
+        out.criteria[c.criterionId] = r;
+        out.totalPoints += r.points;
+        out.totalMaxMarks += Number(c.maxMarks) || 0;
+      });
+      out.percent = normalisePercent(out.totalMaxMarks > 0 ? out.totalPoints / out.totalMaxMarks * 100 : 0);
+      out.letter = overallLetter(out.percent, bands);
+      return out;
+    }
+    return { normalisePercent: normalisePercent, overallLetter: overallLetter, scoreCriterion: scoreCriterion, scoreProfile: scoreProfile };
+  })();
+  /* END SCORING MIRROR */
+  window.__lessonGraderScoring = Scoring;
+
+  /* ---------- voice dictation -------------------------------------------- */
+  /* Appends recognised speech to the target text box. Never saves, approves or
+     publishes; the teacher edits the text and saves deliberately (SC29, SC30). */
+  var Dictation = (function () {
+    var active = null;
+    function Rec() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+    function setStatus(id, msg) { var s = document.querySelector('[data-dictation-status="' + id + '"]'); if (s) s.textContent = msg; }
+    function join(base, extra) { if (!extra) return base; return base && !/\s$/.test(base) ? base + ' ' + extra : (base || '') + extra; }
+    function reset(btn) { btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Dictate'; }
+    function stop() { if (active) { try { active.rec.stop(); } catch (e) { /* already stopped */ } } }
+    function toggle(btn) {
+      var id = btn.getAttribute('data-dictate');
+      var box = $(id);
+      if (!box || box.disabled || box.readOnly) return;
+      if (active && active.id === id) { stop(); return; }
+      stop();
+      var R = Rec();
+      if (!R) {
+        setStatus(id, 'Voice input is not available in this browser. Use your device keyboard\'s microphone key, or type.');
+        return;
+      }
+      var rec = new R();
+      rec.lang = 'en-AU'; rec.continuous = true; rec.interimResults = true;
+      var base = box.value, finals = '';
+      active = { id: id, rec: rec, btn: btn };
+      btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'Stop';
+      setStatus(id, 'Listening… press Stop when finished. You can edit the text afterwards.');
+      rec.onresult = function (ev) {
+        var interim = '';
+        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+          var r = ev.results[i];
+          if (r.isFinal) finals = join(finals, String(r[0].transcript).trim());
+          else interim += r[0].transcript;
+        }
+        box.value = join(base, finals);
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        setStatus(id, interim ? 'Hearing: ' + interim : 'Listening…');
+      };
+      rec.onerror = function (ev) {
+        var msg = { 'not-allowed': 'Microphone permission was denied. Allow the microphone for this site, or type instead.',
+          'service-not-allowed': 'Voice input is blocked on this device. Type instead.',
+          'no-speech': 'No speech was heard. Try again, or type.', 'audio-capture': 'No microphone was found.',
+          'network': 'Voice input needs a network connection.', 'aborted': 'Voice input stopped.' }[ev.error];
+        setStatus(id, msg || 'Voice input stopped (' + ev.error + ').');
+        if (active && active.rec === rec) active.errored = true;
+      };
+      rec.onend = function () {
+        var errored = active && active.rec === rec && active.errored;
+        if (active && active.rec === rec) active = null;
+        reset(btn);
+        if (!errored) setStatus(id, finals ? 'Dictation added. Check and edit it, then save.' : 'Dictation stopped.');
+      };
+      try { rec.start(); } catch (e) { active = null; reset(btn); setStatus(id, 'Voice input could not start: ' + e.message); }
+    }
+    return { toggle: toggle, stop: stop };
+  })();
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-dictate]');
+    if (b) { e.preventDefault(); Dictation.toggle(b); }
+  });
+
+  /* ---------- application state ------------------------------------------ */
+  var S = {
+    ready: false, user: '', canUnlock: false, workbooks: [], wb: '', task: '', dashboard: null, selected: {},
+    studio: null, dirty: false, seq: 0, hash: '', rubricRows: [], rubricSource: '', settings: null, publishPreview: null
+  };
+  function isNarrow() { return window.matchMedia ? window.matchMedia('(max-width: 1023px)').matches : false; }
+
+  /* ---------- routing ------------------------------------------------------ */
+  var VIEWS = ['denied', 'home', 'task', 'studio', 'rubric', 'create', 'link', 'register', 'results', 'settings'];
+  function showView(name) {
+    VIEWS.forEach(function (v) { var s = $('view-' + v); if (s) s.hidden = v !== name; });
+    window.scrollTo(0, 0);
+    var h = $('view-' + name) && $('view-' + name).querySelector('h1');
+    if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+  }
+  function enc(v) { return encodeURIComponent(v); }
+  function taskHash(view, wb, task, sub) { return '#/' + view + '/' + enc(wb) + '/' + enc(task) + (sub ? '/' + enc(sub) : ''); }
+  function parseHash(h) {
+    var parts = String(h || '').replace(/^#\/?/, '').split('/').map(function (p) { try { return decodeURIComponent(p); } catch (e) { return p; } });
+    return { name: parts[0] || 'home', wb: parts[1] || '', task: parts[2] || '', sub: parts[3] || '' };
+  }
+  var ignoreHash = false;
+  function route() {
+    if (!S.ready) return; // nothing loads until the teacher's access is confirmed
+    if (ignoreHash) { ignoreHash = false; return; }
+    var next = location.hash || '#/home';
+    if (S.dirty && next !== S.hash) {
+      if (!window.confirm('You have unsaved changes for ' + (S.studio ? S.studio.submission.studentName : 'this student') + '. Leave without saving?')) {
+        ignoreHash = true; location.hash = S.hash; return;
+      }
+      setDirty(false);
+    }
+    Dictation.stop();
+    S.hash = next;
+    var r = parseHash(next);
+    S.seq++;
+    switch (r.name) {
+      case 'task': return openTask(r.wb, r.task);
+      case 'studio': return openStudent(r.wb, r.task, r.sub);
+      case 'rubric': return openRubric(r.wb, r.task);
+      case 'link': return openLink(r.wb, r.task);
+      case 'register': return openRegister(r.wb, r.task);
+      case 'results': return openResults(r.wb, r.task);
+      case 'create': return openCreate();
+      case 'settings': return openSettings();
+      default: return openHome();
+    }
+  }
+  /* A hash already rendered (e.g. routed during start-up) is not loaded twice. */
+  window.addEventListener('hashchange', function () { if ((location.hash || '#/home') !== S.hash) route(); });
+  window.addEventListener('beforeunload', function (e) { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+  function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+
+  function remember(wb, task, label) { Store.set('last', { wb: wb, task: task, label: label || task, at: new Date().toISOString() }); }
+
+  /* ---------- 1. landing -------------------------------------------------- */
+  function loadWorkbooks() {
+    return Api.data('apiWebListCandidateWorkbooks').then(function (list) { S.workbooks = list || []; return S.workbooks; });
+  }
+  function openHome() {
+    showView('home');
+    fill($('wb-list'), [el('p', { className: 'muted', text: 'Loading workbooks…' })]);
+    var mine = S.seq;
+    loadWorkbooks().then(function () { if (mine === S.seq) renderHome(); }).catch(function (err) {
+      if (mine !== S.seq) return;
+      fill($('wb-list'), [el('div', { className: 'banner danger', text: 'Workbooks could not be loaded: ' + err.message }),
+        el('button', { type: 'button', className: 'btn', text: 'Try again', onclick: openHome })]);
+    });
+  }
+  function workbookLabel(w) { return w.taskName || w.name; }
+  function renderHome() {
+    var last = Store.get('last');
+    var resume = clear($('resume'));
+    if (last && S.workbooks.some(function (w) { return w.id === last.wb; })) {
+      var w = S.workbooks.filter(function (x) { return x.id === last.wb; })[0];
+      resume.appendChild(el('div', { className: 'card' }, [
+        el('h2', { text: 'Resume marking' }),
+        el('p', { text: (w.courseCode ? w.courseCode + ' · ' : '') + last.task + ' — last opened ' + fmtDate(last.at) }),
+        el('a', { className: 'btn primary', href: taskHash('task', last.wb, last.task), text: 'Resume ' + last.task })
+      ]));
+    }
+    var q = $('wb-search').value.trim().toLowerCase();
+    var list = S.workbooks.filter(function (w) {
+      return !q || [w.name, w.courseCode, w.year, w.taskName].concat(w.tasks || []).join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    if (!S.workbooks.length) {
+      fill($('wb-list'), [el('div', { className: 'empty' }, [el('p', { text: 'No grading workbooks yet.' }), el('a', { className: 'btn primary', href: '#/create', text: 'Create one from a Classroom assignment' })])]);
+      return;
+    }
+    if (!list.length) { fill($('wb-list'), [el('div', { className: 'empty', text: 'No workbook matches "' + q + '".' })]); return; }
+    fill($('wb-list'), list.map(function (w) {
+      var tasks = (w.tasks && w.tasks.length ? w.tasks : [w.taskName]).filter(Boolean);
+      return el('article', { className: 'card wb-card' }, [
+        el('h3', { text: workbookLabel(w) }),
+        el('div', { className: 'meta', text: [w.courseCode, w.year, w.updatedAt ? 'updated ' + fmtDate(w.updatedAt) : ''].filter(Boolean).join(' · ') }),
+        el('div', { className: 'row' }, tasks.length ? tasks.map(function (t) {
+          return el('a', { className: 'btn' + (tasks.length === 1 ? ' primary' : ''), href: taskHash('task', w.id, t), text: tasks.length === 1 ? 'Open' : t });
+        }) : [el('span', { className: 'muted small', text: 'No task tab found' })]),
+        el('p', { className: 'small muted', text: w.name })
+      ]);
+    }));
+  }
+  $('wb-search').addEventListener('input', renderHome);
+  $('refresh-workbooks').addEventListener('click', openHome);
+
+  /* ---------- 2. task dashboard ------------------------------------------- */
+  function pillFor(sub) {
+    var cls = sub.status === 'Locked' ? 'locked' : sub.status === 'Approved' ? 'approved' : sub.status === 'InReview' ? 'draft' : 'new';
+    if (sub.reassessment && cls !== 'approved' && cls !== 'locked') cls = 'reassess';
+    return el('span', { className: 'pill ' + cls, text: sub.stateLabel || sub.status });
+  }
+  function openTask(wb, task) {
+    S.wb = wb; S.task = task;
+    showView('task');
+    $('task-title').textContent = task;
+    $('task-crumb').textContent = task;
+    $('btn-rubric').href = taskHash('rubric', wb, task);
+    $('btn-link').href = taskHash('link', wb, task);
+    $('btn-register').href = taskHash('register', wb, task);
+    $('btn-results').href = taskHash('results', wb, task);
+    fill($('roster'), [el('li', { className: 'muted', text: 'Loading students…' })]);
+    var mine = S.seq;
+    return Api.data('apiWebTaskDashboard', wb, task).then(function (d) {
+      if (mine !== S.seq) return;
+      S.dashboard = d;
+      remember(wb, task, task);
+      renderTask();
+      if (d.prepared) refreshQueue();
+    }).catch(function (err) {
+      if (mine !== S.seq) return;
+      fill($('task-banners'), [el('div', { className: 'banner danger', text: 'This task could not be opened: ' + err.message })]);
+      clear($('roster'));
+    });
+  }
+  function renderTask() {
+    var d = S.dashboard;
+    $('task-crumb').textContent = (d.workbook && d.workbook.name ? d.workbook.name + ' › ' : '') + d.taskName;
+    fill($('task-chips'), [
+      el('span', { className: 'pill ' + (d.profile ? 'approved' : 'block'), text: d.profile ? 'Rubric: ' + d.profile.name + ' (' + d.profile.totalMaxMarks + ' marks)' : 'No active rubric' }),
+      el('span', { className: 'pill ' + (d.classroom ? 'neutral' : 'advice'), text: d.classroom ? 'Classroom: ' + d.classroom.assignmentTitle + (d.classroom.dueDate ? ' · due ' + fmtDate(d.classroom.dueDate) : ' · no due date') : 'Not linked to Classroom' }),
+      el('span', { className: 'pill neutral', text: d.stats.approved + ' / ' + d.stats.total + ' approved' })
+    ]);
+    var banners = [];
+    if (!d.prepared) banners.push(el('div', { className: 'banner warn' }, [
+      el('p', { text: 'This workbook is not ready for web grading. Enabling it first makes a backup copy in Drive, then adds the grading sheets. Existing rows are not changed.' }),
+      el('button', { type: 'button', className: 'btn primary', text: 'Back up and enable grading', onclick: enableGrading })]));
+    if (d.prepared && !d.profile) banners.push(el('div', { className: 'banner warn' }, [el('span', { text: 'No rubric is active for this task. ' }), el('a', { href: taskHash('rubric', S.wb, S.task), text: 'Review and activate a rubric' })]));
+    if (d.stats.evidenceChanged) banners.push(el('div', { className: 'banner info', text: d.stats.evidenceChanged + ' student(s) have new Classroom evidence since their draft or approval. Approved results are unchanged until you reassess.' }));
+    if (d.classroom && d.classroom.dueDate && !d.classroom.autoImported) banners.push(el('p', { className: 'small muted', text: 'Automatic import runs hourly after the due date when the sync trigger is installed (Settings). "Sync now" works any time.' }));
+    fill($('task-banners'), banners);
+    ['btn-sync', 'btn-ai-selected', 'btn-process-queue', 'btn-publish', 'btn-add-student'].forEach(function (id) { $(id).disabled = !d.prepared; });
+    $('btn-sync').disabled = !d.prepared || !d.classroom;
+    renderRoster();
+  }
+  function visibleSubmissions() {
+    var d = S.dashboard; if (!d) return [];
+    var q = $('roster-search').value.trim().toLowerCase();
+    var f = $('roster-filter').value, sort = $('roster-sort').value;
+    var rank = { New: 0, InReview: 1, Approved: 2, Locked: 3, Superseded: 4 };
+    return d.submissions.filter(function (s) {
+      if (f !== 'all' && !s.currentOfficial) return false;
+      if (f === 'todo' && (s.status === 'Approved' || s.status === 'Locked')) return false;
+      if (f === 'draft' && s.status !== 'InReview') return false;
+      if (f === 'approved' && s.status !== 'Approved' && s.status !== 'Locked') return false;
+      if (f === 'changed' && !s.evidenceChangedAt) return false;
+      return !q || (s.studentName + ' ' + s.studentEmail + ' ' + s.className).toLowerCase().indexOf(q) !== -1;
+    }).sort(function (a, b) {
+      if (sort === 'status') return (rank[a.status] || 0) - (rank[b.status] || 0) || a.studentName.localeCompare(b.studentName);
+      if (sort === 'updated') return String(b.updatedAt).localeCompare(String(a.updatedAt));
+      return a.studentName.localeCompare(b.studentName) || b.version - a.version;
+    });
+  }
+  function renderRoster() {
+    var list = visibleSubmissions();
+    if (!S.dashboard.submissions.length) {
+      fill($('roster'), [el('li', { className: 'empty' }, [el('span', { text: S.dashboard.classroom ? 'No submissions yet. Press "Sync now" to import from Classroom.' : 'No students yet. Link a Classroom assignment or add students manually.' })])]);
+      return;
+    }
+    if (!list.length) { fill($('roster'), [el('li', { className: 'muted', text: 'No students match this filter.' })]); return; }
+    fill($('roster'), list.map(function (s) {
+      var meta = [s.className, 'v' + s.version, s.late ? 'late' : '', s.evidenceChangedAt ? 'new evidence' : '', s.published ? s.published : ''].filter(Boolean).join(' · ');
+      return el('li', {}, [
+        el('input', { type: 'checkbox', 'data-select': s.submissionRecordId, 'aria-label': 'Select ' + s.studentName, checked: !!S.selected[s.submissionRecordId] }),
+        el('div', { className: 'who' }, [el('strong', { text: s.studentName }), el('span', { className: 'small', text: meta }), pillFor(s)]),
+        el('a', { className: 'btn open', href: taskHash('studio', S.wb, S.task, s.submissionRecordId), text: s.status === 'Approved' || s.status === 'Locked' ? 'View' : 'Mark' })
+      ]);
+    }));
+  }
+  ['roster-search', 'roster-filter', 'roster-sort'].forEach(function (id) { $(id).addEventListener(id === 'roster-search' ? 'input' : 'change', function () { if (S.dashboard) renderRoster(); }); });
+  $('roster').addEventListener('change', function (e) {
+    var id = e.target.getAttribute('data-select');
+    if (!id) return;
+    if (e.target.checked) S.selected[id] = true; else delete S.selected[id];
+  });
+  $('select-all').addEventListener('change', function () {
+    var on = $('select-all').checked;
+    visibleSubmissions().forEach(function (s) { if (on) S.selected[s.submissionRecordId] = true; else delete S.selected[s.submissionRecordId]; });
+    renderRoster();
+  });
+  function selectedIds() {
+    var current = S.dashboard ? S.dashboard.submissions.map(function (s) { return s.submissionRecordId; }) : [];
+    return Object.keys(S.selected).filter(function (id) { return current.indexOf(id) !== -1; });
+  }
+  function enableGrading() {
+    Api.data('apiWebEnableGrading', S.wb).then(function (r) { toast(r.message || 'Grading enabled.'); openTask(S.wb, S.task); }).catch(fail);
+  }
+  $('btn-sync').addEventListener('click', function () {
+    var btn = $('btn-sync'); btn.disabled = true;
+    Api.data('apiWebImportTask', S.wb, S.task).then(function (r) { toast(r.message); return openTask(S.wb, S.task); })
+      .catch(fail).then(function () { btn.disabled = false; });
+  });
+  function refreshQueue() {
+    return Api.data('apiWebAiQueueStatus', S.wb, S.task).then(function (q) {
+      var c = q.counts;
+      $('queue-status').textContent = (c.Queued || c.Running) ? 'AI queue: ' + (c.Queued + c.Running) + ' waiting, ' + c.Done + ' drafts ready' + (c.Failed ? ', ' + c.Failed + ' failed' : '') + '.' :
+        c.Done ? 'AI queue: ' + c.Done + ' draft(s) ready for review' + (c.Failed ? ', ' + c.Failed + ' failed' : '') + '.' : '';
+    }).catch(function () { $('queue-status').textContent = ''; });
+  }
+  $('btn-ai-selected').addEventListener('click', function () {
+    var ids = selectedIds();
+    if (!ids.length) { toast('Select students with the checkboxes first.', true); return; }
+    ask('Draft ' + ids.length + ' student(s) with AI?', [el('p', { text: 'Drafts are saved for your review. Nothing is approved or published. Students you have already marked keep your selections; AI suggestions are shown beside them.' })],
+      [{ label: 'Cancel', value: null }, { label: 'Queue and start', value: true, primary: true }]).then(function (ok) {
+      if (!ok) return;
+      return Api.data('apiWebQueueAiDrafts', S.wb, S.task, ids, false).then(function (q) {
+        toast(q.message);
+        return Api.data('apiWebProcessAiQueue', S.wb, S.task);
+      }).then(function (p) { toast(p.message); S.selected = {}; return openTask(S.wb, S.task); }).catch(fail);
+    });
+  });
+  $('btn-process-queue').addEventListener('click', function () {
+    Api.data('apiWebProcessAiQueue', S.wb, S.task).then(function (p) { toast(p.message); return openTask(S.wb, S.task); }).catch(fail);
+  });
+  $('btn-add-student').addEventListener('click', function () { $('manual-student-form').hidden = !$('manual-student-form').hidden; if (!$('manual-student-form').hidden) $('manual-name').focus(); });
+  $('manual-cancel').addEventListener('click', function () { $('manual-student-form').hidden = true; });
+  $('manual-student-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('manual-name').value.trim();
+    $('manual-name').classList.toggle('invalid', !name);
+    if (!name) { toast('Enter the student\'s name.', true); $('manual-name').focus(); return; }
+    Api.data('apiWebAddManualSubmission', S.wb, S.task, name, $('manual-email').value.trim(), $('manual-class').value.trim()).then(function (r) {
+      toast(r.message);
+      $('manual-student-form').hidden = true; $('manual-name').value = ''; $('manual-email').value = ''; $('manual-class').value = '';
+      go(taskHash('studio', S.wb, S.task, r.submissionRecordId));
+    }).catch(fail);
+  });
+
+  /* ---------- publishing --------------------------------------------------- */
+  $('btn-publish').addEventListener('click', function () {
+    var ids = selectedIds();
+    if (!ids.length) { toast('Select the approved students to publish.', true); return; }
+    Api.data('apiWebPublishPreview', S.wb, S.task, ids).then(function (p) {
+      S.publishPreview = { ids: ids, data: p };
+      var rows = p.eligible.map(function (e) {
+        return el('tr', {}, [el('td', { text: e.name }), el('td', { text: e.letter }), el('td', { text: fmtNum(e.points, 2) + ' / ' + e.maxMarks }),
+          el('td', { text: e.grade === null ? 'not sent' : e.grade + ' / ' + p.destination.maxPoints }), el('td', { className: 'small', text: e.alreadyPublished || '' })]);
+      });
+      fill($('publish-body'), [
+        el('p', {}, [el('strong', { text: 'Destination: ' }), document.createTextNode('"' + p.destination.assignmentTitle + '" in ' + p.destination.courseName + ' (' + p.destination.maxPoints + ' points)')]),
+        p.destination.warning ? el('p', { className: 'banner warn', text: p.destination.warning }) : null,
+        p.eligible.length ? el('div', { className: 'table-wrap' }, [el('table', { className: 'simple' }, [
+          el('thead', {}, [el('tr', {}, ['Student', 'Grade', 'Marks', 'Classroom number', 'Previously'].map(function (h) { return el('th', { scope: 'col', text: h }); }))]),
+          el('tbody', {}, rows)])]) : el('p', { className: 'banner warn', text: 'None of the selected students can be published.' }),
+        p.ineligible.length ? el('div', {}, [el('h3', { text: 'Not included' }), el('ul', {}, p.ineligible.map(function (i) { return el('li', { text: (i.name || i.id) + ' — ' + i.reason }); }))]) : null,
+        el('p', { className: 'small muted', text: 'Only the students listed above are changed. Classroom stores a number; letters and comments are not sent (the API cannot write private comments). Grades stay as draft grades unless you also return them.' })
+      ]);
+      $('publish-controls').hidden = !p.eligible.length;
+      $('publish-confirm').hidden = !p.eligible.length;
+      $('publish-typed').value = ''; $('publish-return').checked = false;
+      openDialog($('dlg-publish'));
+    }).catch(fail);
+  });
+  $('publish-confirm').addEventListener('click', function () {
+    var pp = S.publishPreview;
+    if (!pp) return;
+    if ($('publish-typed').value.trim() !== 'PUBLISH') { $('publish-typed').classList.add('invalid'); toast('Type PUBLISH to confirm.', true); return; }
+    $('publish-typed').classList.remove('invalid');
+    $('publish-confirm').disabled = true;
+    Api.call('apiWebPublish', S.wb, S.task, pp.ids, pp.data.previewToken, 'PUBLISH', { returnToStudents: $('publish-return').checked }).then(function (res) {
+      if (!res) throw new Error('No response from the server.');
+      if (!res.data) throw new Error(res.message);
+      fill($('publish-body'), [el('p', { className: 'banner ' + (res.success ? 'ok' : 'warn'), text: res.message }),
+        el('ul', {}, res.data.results.map(function (r) { return el('li', { text: r.name + ': ' + (r.published ? '✓ ' : '✗ ') + r.message }); }))]);
+      $('publish-controls').hidden = true; $('publish-confirm').hidden = true;
+      S.selected = {};
+      openTask(S.wb, S.task);
+    }).catch(fail).then(function () { $('publish-confirm').disabled = false; });
+  });
+
+  /* ---------- 3. assessment studio ---------------------------------------- */
+  function setDirty(on) {
+    S.dirty = !!on;
+    if (on) setSaveStatus('dirty');
+  }
+  function setSaveStatus(state, detail) {
+    var node = $('save-status');
+    node.className = 'save-status ' + state;
+    node.textContent = state === 'dirty' ? 'Unsaved changes' : state === 'saving' ? 'Saving…' :
+      state === 'saved' ? 'Saved to the workbook ' + (detail || '') : state === 'error' ? 'Not saved — ' + detail + ' Your changes are still on screen.' :
+      state === 'readonly' ? detail : 'No changes';
+  }
+  function selectTab(paneId) {
+    ['pane-assess', 'pane-evidence', 'pane-feedback', 'pane-history'].forEach(function (p) { $(p).hidden = p !== paneId; });
+    document.querySelectorAll('.studio-tabs [role=tab]').forEach(function (t) { t.setAttribute('aria-selected', t.getAttribute('data-pane') === paneId ? 'true' : 'false'); });
+  }
+  document.querySelector('.studio-tabs').addEventListener('click', function (e) {
+    var t = e.target.closest('[role=tab]'); if (t) selectTab(t.getAttribute('data-pane'));
+  });
+
+  function openStudent(wb, task, sub) {
+    S.wb = wb; S.task = task;
+    showView('studio');
+    S.studio = null;
+    setDirty(false);
+    setSaveStatus('clean');
+    $('student-title').textContent = 'Loading…';
+    $('studio-back').href = taskHash('task', wb, task);
+    fill($('criteria'), [el('p', { className: 'muted', text: 'Loading assessment…' })]);
+    if (!isNarrow()) selectTab('pane-assess'); else selectTab('pane-assess');
+    var mine = S.seq;
+    var ensureDash = S.dashboard && S.dashboard.taskName === task && S.dashboard.workbook && S.dashboard.workbook.id === wb ? Promise.resolve() :
+      Api.data('apiWebTaskDashboard', wb, task).then(function (d) { if (mine === S.seq) S.dashboard = d; }).catch(function () { /* prev/next unavailable */ });
+    return Promise.all([Api.data('apiWebGradeDetail', wb, task, sub), ensureDash]).then(function (res) {
+      if (mine !== S.seq) return; // a newer navigation happened: discard this stale response
+      S.studio = res[0];
+      remember(wb, task, task);
+      renderStudio();
+    }).catch(function (err) {
+      if (mine !== S.seq) return;
+      $('student-title').textContent = 'Could not open this student';
+      fill($('studio-banners'), [el('div', { className: 'banner danger', text: err.message })]);
+      clear($('criteria'));
+    });
+  }
+
+  function studioReadOnly() { var d = S.studio; return !d || d.readOnly || !d.profile; }
+
+  function renderStudio() {
+    var d = S.studio, sub = d.submission;
+    $('student-title').textContent = sub.studentName;
+    var st = $('student-state');
+    st.textContent = sub.stateLabel;
+    st.className = 'pill ' + (sub.status === 'Locked' ? 'locked' : sub.status === 'Approved' ? 'approved' : sub.status === 'InReview' ? 'draft' : 'new');
+    $('studio-crumb').textContent = ' · ' + [sub.className, sub.taskName, 'version ' + sub.version, d.workbook ? d.workbook.name : ''].filter(Boolean).join(' · ');
+    var banners = [];
+    if (d.warning) banners.push(el('div', { className: 'banner warn', text: d.warning }));
+    if (sub.status === 'Locked') banners.push(el('div', { className: 'banner info', text: 'Final-locked ' + fmtDate(sub.lockedAt) + '. Ordinary controls cannot change it.' + (d.canUnlock ? ' You are authorised to unlock it.' : '') }));
+    else if (sub.status === 'Approved') banners.push(el('div', { className: 'banner ok', text: 'Teacher-approved ' + fmtDate(sub.approvedAt) + '. ' + (sub.published ? 'Classroom: ' + sub.published + '.' : 'Not published to Classroom.') }));
+    if (!sub.currentOfficial) banners.push(el('div', { className: 'banner info', text: 'This is a historical version. A newer version is current.' }));
+    if (sub.hasPendingEvidence) banners.push(el('div', { className: 'banner info', text: 'New Classroom evidence arrived after approval (' + fmtDate(sub.evidenceChangedAt) + '). The approved result is unchanged. Use "Reassess" to mark the new evidence.' }));
+    fill($('studio-banners'), banners);
+    renderEvidence();
+    renderHistory();
+    renderComparison();
+    renderCriteria();
+    renderFeedback();
+    var ro = studioReadOnly();
+    $('btn-save').hidden = ro; $('btn-ai').hidden = ro; $('btn-approve').hidden = ro;
+    $('btn-approve').disabled = !d.assessmentId;
+    $('btn-lock').hidden = sub.status !== 'Approved' || !sub.currentOfficial;
+    $('btn-reassess').hidden = sub.status !== 'Approved' || !sub.currentOfficial;
+    $('btn-unlock').hidden = !(sub.status === 'Locked' && d.canUnlock);
+    $('btn-report').hidden = sub.status !== 'Approved' && sub.status !== 'Locked';
+    setSaveStatus(ro ? 'readonly' : 'clean', ro ? (sub.status === 'Locked' ? 'Final — read only' : sub.status === 'Approved' ? 'Approved — read only' : 'Read only') : '');
+    if (!ro && !d.assessmentId) setSaveStatus('readonly', 'Not started — tick observables, then save a draft.');
+    updateLive();
+    var siblings = S.dashboard ? S.dashboard.submissions.filter(function (s) { return s.currentOfficial; }) : [];
+    var idx = siblings.map(function (s) { return s.submissionRecordId; }).indexOf(sub.submissionRecordId);
+    $('prev-student').disabled = idx <= 0; $('next-student').disabled = idx === -1 || idx >= siblings.length - 1;
+    $('prev-student').onclick = function () { if (idx > 0) go(taskHash('studio', S.wb, S.task, siblings[idx - 1].submissionRecordId)); };
+    $('next-student').onclick = function () { if (idx !== -1 && idx < siblings.length - 1) go(taskHash('studio', S.wb, S.task, siblings[idx + 1].submissionRecordId)); };
+  }
+
+  function statusPill(status) {
+    var map = { Reviewed: 'approved', Pending: 'neutral', Unsupported: 'block', Unreadable: 'block', TooLarge: 'block', Skipped: 'advice', Inaccessible: 'block' };
+    return el('span', { className: 'pill ' + (map[status] || 'neutral'), text: status === 'Reviewed' ? 'Read by AI' : status === 'Pending' ? 'Not yet read' : status });
+  }
+  function renderEvidence() {
+    var d = S.studio;
+    var files = d.attachments || [];
+    var unreadable = files.filter(function (f) { return ['Unsupported', 'Unreadable', 'TooLarge', 'Inaccessible'].indexOf(f.status) !== -1; });
+    fill($('evidence-list'), files.length ? files.map(function (f) {
+      var link = safeHttps(f.link);
+      var canPreview = /^[A-Za-z0-9_-]{10,}$/.test(f.driveFileId || '');
+      return el('div', { className: 'evidence-file' }, [
+        el('div', {}, [el('strong', { text: f.fileName }), el('div', { className: 'small muted', text: f.mimeType || '' }), statusPill(f.status)]),
+        el('div', { className: 'row' }, [
+          canPreview ? el('button', { type: 'button', className: 'btn small', text: 'View here', onclick: function () {
+            var v = $('evidence-viewer'); v.src = 'https://drive.google.com/file/d/' + encodeURIComponent(f.driveFileId) + '/preview'; v.hidden = false; v.title = 'Preview of ' + f.fileName; } }) : null,
+          link ? el('a', { className: 'btn small', href: link, target: '_blank', rel: 'noopener', text: 'Open' }) : null
+        ]),
+        f.limitations ? el('div', { className: 'limit', text: f.limitations }) : null
+      ]);
+    }) : [el('p', { className: 'muted', text: d.submission.sourceType === 'Manual' ? 'Teacher-entered student: no Drive evidence. Assess from your classroom observations.' : 'No files were attached in Classroom.' })]);
+    $('ack-unreadable-wrap').hidden = !unreadable.length;
+    $('ack-unreadable').checked = !!(d.feedback && d.feedback.acknowledgedUnreadable);
+    $('ack-unreadable').disabled = studioReadOnly();
+    var hist = d.evidenceHistory || [];
+    $('evidence-history-card').hidden = !hist.length;
+    $('evidence-text').hidden = true;
+    fill($('evidence-history'), hist.map(function (h) {
+      return el('div', { className: 'row between small' }, [el('span', { text: h.fileName + ' · ' + fmtDate(h.extractedAt) + (h.truncated ? ' (truncated)' : '') }),
+        el('button', { type: 'button', className: 'btn small', text: 'View text', onclick: function () {
+          Api.data('apiWebEvidenceVersion', S.wb, S.task, d.submission.submissionRecordId, h.versionId).then(function (v) { $('evidence-text').textContent = v.markdown; $('evidence-text').hidden = false; }).catch(fail);
+        } })]);
+    }));
+  }
+  function renderHistory() {
+    fill($('history'), (S.studio.history || []).slice().reverse().map(function (h) {
+      return el('li', {}, [el('strong', { text: h.action }), document.createTextNode(' · ' + fmtDate(h.when) + ' · ' + (h.by || '')), h.notes ? el('div', { className: 'muted', text: h.notes }) : null]);
+    }));
+  }
+  function renderComparison() {
+    var c = S.studio.comparison;
+    if (!c) { clear($('comparison')); return; }
+    var rows = c.criteria.map(function (r) {
+      return el('tr', {}, [el('td', { text: r.title }), el('td', { text: r.before ? fmtNum(r.before.points, 2) + ' (' + r.before.grade + ')' : '—' }),
+        el('td', { text: r.after ? fmtNum(r.after.points, 2) + ' (' + r.after.grade + ')' : '—' }),
+        el('td', { className: 'small', text: (r.added.length ? '+' + r.added.join(', ') : '') + (r.removed.length ? ' −' + r.removed.join(', ') : '') })]);
+    });
+    fill($('comparison'), [el('div', { className: 'card' }, [
+      el('h2', { text: 'Changes since the earlier approved version' }),
+      c.approved ? el('p', { className: 'small', text: 'Earlier approval: ' + c.approved.grade + ' (' + fmtNum(c.approved.points, 2) + ' / ' + c.approved.maxMarks + '), ' + fmtDate(c.approved.approvedAt) + '. It is kept unchanged.' }) : null,
+      c.sameRubric ? null : el('p', { className: 'banner warn small', text: 'This version uses a different rubric version; criteria are matched by ID.' }),
+      el('div', { className: 'table-wrap' }, [el('table', { className: 'simple' }, [el('thead', {}, [el('tr', {}, ['Criterion', 'Before', 'Now', 'Observables'].map(function (h) { return el('th', { scope: 'col', text: h }); }))]), el('tbody', {}, rows)])])
+    ])]);
+  }
+
+  function flagsFor(cid) { var f = S.studio.flags || {}; return (f.byCriterion && f.byCriterion[cid]) || []; }
+  function renderCriteria() {
+    var d = S.studio;
+    if (!d.profile) { fill($('criteria'), [el('div', { className: 'banner warn' }, [el('span', { text: 'No rubric is available. ' }), el('a', { href: taskHash('rubric', S.wb, S.task), text: 'Review the rubric' })])]); return; }
+    var ro = studioReadOnly();
+    var cards = d.profile.criteria.map(function (c, index) {
+      var st = d.criteriaMap[c.criterionId] || { checkboxes: {} };
+      var ai = st.aiProposal || null;
+      var evidenceById = {};
+      (st.aiEvidence || []).forEach(function (e) { evidenceById[e.checkboxId] = e; });
+      var flags = flagsFor(c.criterionId);
+      var bands = c.bandOrder.map(function (band) {
+        return el('div', { className: 'band' }, [el('div', { className: 'band-label', text: 'Band ' + band + ' · ' + Math.round((c.bandWeights[band] || 0) * 100) + '% of marks if all evidenced' })]
+          .concat((c.bands[band] || []).map(function (o) {
+            var aiTick = ai && ai.checks && ai.checks[o.id];
+            var unsupported = ai && ai.unsupported && ai.unsupported.indexOf(o.id) !== -1;
+            var ev = evidenceById[o.id];
+            return el('label', { className: 'obs' }, [
+              el('input', { type: 'checkbox', 'data-obs': o.id, 'data-cid': c.criterionId, checked: !!(st.checkboxes && st.checkboxes[o.id]), disabled: ro }),
+              el('span', { className: 'txt' }, [document.createTextNode(o.text),
+                aiTick ? el('span', { className: 'ai', text: 'AI suggested' + (ev ? ': ' + ev.fileName + ' — ' + ev.note : '') }) : null,
+                unsupported ? el('span', { className: 'ai unsupported', text: 'AI suggested this without citing evidence, so it was not ticked.' }) : null])
+            ]);
+          })));
+      });
+      var md = el('label', { className: 'obs md' }, [el('input', { type: 'checkbox', 'data-obs': c.mdOverride.id, 'data-cid': c.criterionId, checked: !!(st.checkboxes && st.checkboxes[c.mdOverride.id]), disabled: ro }),
+        el('span', { className: 'txt' }, [el('strong', { text: 'Distinct override (full marks): ' }), document.createTextNode(c.mdOverride.text)])]);
+      var review = st.review || {};
+      var reviewControls = [
+        ai && ai.insufficient ? el('label', { className: 'check' }, [el('input', { type: 'checkbox', 'data-review': 'reviewed', 'data-cid': c.criterionId, checked: !!review.reviewed, disabled: ro }), document.createTextNode(' I have checked the evidence for this criterion myself.')]) : null,
+        el('label', { className: 'check' }, [el('input', { type: 'checkbox', 'data-review': 'noEvidence', 'data-cid': c.criterionId, checked: !!review.noEvidence, disabled: ro }), document.createTextNode(' No creditable evidence (0 marks).')])
+      ];
+      var noteId = 'note-' + c.criterionId;
+      var note = el('div', { className: 'field' }, [
+        el('div', { className: 'label-row' }, [el('label', { for: noteId, text: 'Teacher observations' }), el('button', { type: 'button', className: 'btn small dictate', 'data-dictate': noteId, 'aria-pressed': 'false', text: 'Dictate', disabled: ro })]),
+        el('textarea', { id: noteId, 'data-note': c.criterionId, disabled: ro, value: st.teacherWrittenNote || '' }),
+        el('div', { className: 'dictation-status', 'data-dictation-status': noteId, 'aria-live': 'polite' })
+      ]);
+      var blocking = flags.filter(function (f) { return f.severity === 'blocking'; });
+      var details = el('details', { className: 'crit' + (blocking.length ? ' flagged' : ''), 'data-cid': c.criterionId, 'data-index': index, 'data-flagged': flags.length ? 'yes' : 'no' }, [
+        el('summary', {}, [el('strong', { text: c.title }), el('span', { className: 'muted small', text: (c.part ? c.part + ' · ' : '') + c.maxMarks + ' marks' + (c.outcome ? ' · ' + c.outcome : '') }),
+          el('span', { className: 'pill neutral', 'data-crit-score': c.criterionId, text: '—' }),
+          blocking.length ? el('span', { className: 'pill block', text: blocking.length + ' to resolve' }) : flags.length ? el('span', { className: 'pill advice', text: 'note' }) : null]),
+        el('div', { className: 'crit-body' }, [
+          flags.length ? el('ul', { className: 'flags' }, flags.map(function (f) { return el('li', { className: f.severity, text: f.message }); })) : null
+        ].concat(bands, [md], reviewControls, [note]))
+      ]);
+      return details;
+    });
+    /* Phone: criteria with flags first and open; the rest collapsed but available (SC27). */
+    if (isNarrow()) {
+      cards.sort(function (a, b) { return (a.getAttribute('data-flagged') === 'yes' ? 0 : 1) - (b.getAttribute('data-flagged') === 'yes' ? 0 : 1) || Number(a.getAttribute('data-index')) - Number(b.getAttribute('data-index')); });
+      cards.forEach(function (c) { c.open = c.getAttribute('data-flagged') === 'yes'; });
+    } else {
+      cards.forEach(function (c) { c.open = true; });
+    }
+    fill($('criteria'), cards);
+    var all = (S.studio.flags && S.studio.flags.flags) || [];
+    fill($('flag-summary'), all.filter(function (f) { return !f.criterionId; }).map(function (f) { return el('li', { className: f.severity, text: f.message }); }));
+  }
+
+  function renderFeedback() {
+    var fb = S.studio.feedback || {};
+    var ro = studioReadOnly();
+    document.querySelectorAll('[data-feedback]').forEach(function (t) { t.value = fb[t.getAttribute('data-feedback')] || ''; t.disabled = ro; });
+    document.querySelectorAll('#pane-feedback [data-dictate]').forEach(function (b) { b.disabled = ro; });
+    var stale = (S.studio.flags && S.studio.flags.flags || []).some(function (f) { return f.code === 'FEEDBACK_NOT_REVIEWED'; });
+    $('fb-current').checked = !!fb.basisHash && !stale;
+    $('fb-current').disabled = ro;
+    $('btn-build-feedback').disabled = ro;
+    clear($('output-preview'));
+  }
+
+  function collect() {
+    var d = S.studio, criteria = {};
+    d.profile.criteria.forEach(function (c) {
+      var checks = {};
+      document.querySelectorAll('input[data-obs][data-cid="' + c.criterionId + '"]').forEach(function (cb) { if (cb.checked) checks[cb.getAttribute('data-obs')] = true; });
+      var review = {};
+      document.querySelectorAll('input[data-review][data-cid="' + c.criterionId + '"]').forEach(function (cb) { review[cb.getAttribute('data-review')] = cb.checked; });
+      var noteEl = document.querySelector('textarea[data-note="' + c.criterionId + '"]');
+      criteria[c.criterionId] = { checkboxes: checks, teacherWrittenNote: noteEl ? noteEl.value : '', review: review };
+    });
+    var feedback = {};
+    document.querySelectorAll('[data-feedback]').forEach(function (t) { feedback[t.getAttribute('data-feedback')] = t.value; });
+    feedback.acknowledgedUnreadable = $('ack-unreadable').checked;
+    feedback.markFeedbackCurrent = $('fb-current').checked;
+    return { criteria: criteria, feedback: feedback };
+  }
+
+  function updateLive() {
+    var d = S.studio;
+    if (!d || !d.profile) return;
+    var states = collect().criteria;
+    var r = Scoring.scoreProfile(d.profile, states);
+    $('live-points').textContent = fmtNum(r.totalPoints, 2);
+    $('live-max').textContent = '/ ' + r.totalMaxMarks + ' marks';
+    $('live-letter').textContent = r.letter;
+    $('live-letter').className = 'pill ' + (r.letter === 'A' || r.letter === 'B' ? 'approved' : 'neutral');
+    $('live-percent').textContent = fmtNum(r.percent, 1) + '%';
+    d.profile.criteria.forEach(function (c) {
+      var node = document.querySelector('[data-crit-score="' + c.criterionId + '"]');
+      var cr = r.criteria[c.criterionId];
+      if (node) node.textContent = fmtNum(cr.points, 2) + ' / ' + c.maxMarks + ' · ' + cr.grade + (cr.rawPoints > cr.maxMarks + 1e-9 ? ' (capped)' : '');
+      var none = document.querySelector('input[data-review="noEvidence"][data-cid="' + c.criterionId + '"]');
+      var any = Object.keys(states[c.criterionId].checkboxes).length > 0;
+      if (none) { if (any) none.checked = false; none.disabled = studioReadOnly() || any; }
+    });
+  }
+
+  $('view-studio').addEventListener('change', function (e) {
+    var t = e.target;
+    if (!S.studio || studioReadOnly()) return;
+    if (t.matches('input[data-obs], input[data-review], #ack-unreadable, #fb-current')) {
+      if (t.matches('input[data-obs], input[data-review]')) $('fb-current').checked = false; // selections changed: feedback must be re-checked
+      setDirty(true); updateLive();
+    }
+  });
+  $('view-studio').addEventListener('input', function (e) {
+    if (!S.studio || studioReadOnly()) return;
+    if (e.target.matches('textarea[data-note], [data-feedback]')) {
+      if (e.target.matches('textarea[data-note], #fb-observation')) $('fb-current').checked = false;
+      setDirty(true);
+    }
+  });
+
+  function save() {
+    var d = S.studio;
+    if (!d || studioReadOnly()) return Promise.resolve(false);
+    var ctx = { wb: S.wb, task: S.task, sub: d.submission.submissionRecordId, seq: S.seq };
+    var data = collect();
+    setSaveStatus('saving');
+    $('btn-save').disabled = true;
+    return Api.data('apiWebSaveDraft', ctx.wb, ctx.task, ctx.sub, data.criteria, data.feedback, d.revision).then(function (res) {
+      if (ctx.seq !== S.seq) return true; // saved, but the teacher has moved on: do not repaint
+      setDirty(false);
+      return Api.data('apiWebGradeDetail', ctx.wb, ctx.task, ctx.sub).then(function (fresh) {
+        if (ctx.seq !== S.seq) return true;
+        S.studio = fresh;
+        renderStudio();
+        setSaveStatus('saved', fmtDate(res.savedAt) || '');
+        return true;
+      });
+    }).catch(function (err) {
+      if (ctx.seq === S.seq) setSaveStatus('error', err.message);
+      return false;
+    }).then(function (ok) { $('btn-save').disabled = false; return ok; });
+  }
+  $('btn-save').addEventListener('click', function () { save(); });
+
+  $('btn-build-feedback').addEventListener('click', function () {
+    var d = S.studio; if (!d) return;
+    var data = collect();
+    Api.data('apiWebBuildFeedback', S.wb, S.task, d.submission.submissionRecordId, data.criteria, data.feedback.generalObservation).then(function (fb) {
+      var write = function () {
+        $('fb-well').value = fb.whatWentWell; $('fb-improve').value = fb.areasForImprovement; $('fb-goals').value = fb.goalsForNextAssessment;
+        $('fb-current').checked = true; setDirty(true); toast('Feedback updated from the current assessment. Edit it, then save.');
+      };
+      var hasText = ['fb-well', 'fb-improve', 'fb-goals'].some(function (id) { return $(id).value.trim(); });
+      if (!hasText) return write();
+      return ask('Replace the current feedback?', 'The three student feedback boxes will be replaced with text built from the current selections and observations. You can edit it afterwards.',
+        [{ label: 'Keep mine', value: null }, { label: 'Replace', value: true, primary: true }]).then(function (ok) { if (ok) write(); });
+    }).catch(fail);
+  });
+  $('btn-output-preview').addEventListener('click', function () {
+    var d = S.studio; if (!d) return;
+    Api.data('apiWebOutputPreview', S.wb, S.task, d.submission.submissionRecordId).then(function (p) {
+      var m = p.mapping || {};
+      fill($('output-preview'), [
+        S.dirty ? el('p', { className: 'banner warn small', text: 'Showing the last SAVED version. Save to preview your latest edits.' }) : null,
+        el('p', { className: 'small muted', text: 'Based on the ' + p.basedOn + '.' }),
+        el('pre', { className: 'text', text: p.comment.text }),
+        p.comment.warnings.length ? el('ul', { className: 'small' }, p.comment.warnings.map(function (w) { return el('li', { text: w }); })) : null,
+        el('p', { className: 'small', text: m.error ? 'Classroom: ' + m.error : 'Classroom number: ' + (m.grade.grade === null ? 'none (setting)' : m.grade.grade + ' / ' + m.destination.maxPoints) + ' — ' + m.grade.note })
+      ]);
+    }).catch(fail);
+  });
+
+  function approvalReview(d) {
+    var scores = d.scores || { criteria: {} };
+    var rows = d.profile.criteria.map(function (c) {
+      var st = d.criteriaMap[c.criterionId] || { checkboxes: {} };
+      var picked = [];
+      c.bandOrder.forEach(function (b) { (c.bands[b] || []).forEach(function (o) { if (st.checkboxes[o.id]) picked.push(b + ': ' + o.text); }); });
+      if (st.checkboxes[c.mdOverride.id]) picked.push('Distinct override');
+      if (!picked.length && st.review && st.review.noEvidence) picked.push('No creditable evidence (0 marks)');
+      var r = scores.criteria[c.criterionId] || {};
+      return el('tr', {}, [el('td', { text: c.title }), el('td', { text: fmtNum(r.points, 2) + ' / ' + c.maxMarks + ' (' + (r.grade || '—') + ')' }), el('td', { className: 'small', text: picked.join('; ') || '—' })]);
+    });
+    var flags = (d.flags && d.flags.flags) || [];
+    var blocking = flags.filter(function (f) { return f.severity === 'blocking'; });
+    var advisory = flags.filter(function (f) { return f.severity === 'advisory'; });
+    var fb = d.feedback || {};
+    return { blocking: blocking, nodes: [
+      el('p', {}, [el('strong', { text: d.submission.studentName + ': ' }), document.createTextNode(fmtNum(scores.totalPoints, 2) + ' / ' + scores.totalMaxMarks + ' marks, ' + fmtNum(scores.percent, 1) + '%, grade ' + scores.letter)]),
+      el('div', { className: 'table-wrap' }, [el('table', { className: 'simple' }, [el('thead', {}, [el('tr', {}, ['Criterion', 'Mark', 'Selected observables'].map(function (h) { return el('th', { scope: 'col', text: h }); }))]), el('tbody', {}, rows)])]),
+      el('h3', { text: 'Student feedback' }),
+      el('pre', { className: 'text', text: [fb.whatWentWell, fb.areasForImprovement, fb.goalsForNextAssessment].filter(Boolean).join('\n\n') || '(no feedback written)' }),
+      blocking.length ? el('div', { className: 'banner danger' }, [el('strong', { text: 'Resolve before approving:' }), el('ul', {}, blocking.map(function (f) { return el('li', { text: f.message }); }))]) : el('p', { className: 'banner ok', text: 'No blocking flags.' }),
+      advisory.length ? el('div', { className: 'banner info' }, [el('strong', { text: 'For your information:' }), el('ul', {}, advisory.map(function (f) { return el('li', { text: f.message }); }))]) : null,
+      el('p', { className: 'small muted', text: 'Approval saves an immutable snapshot to the workbook. It does not publish to Classroom.' })
+    ] };
+  }
+  $('btn-approve').addEventListener('click', function () {
+    var start = S.dirty ? save() : Promise.resolve(true);
+    start.then(function (ok) {
+      if (!ok || !S.studio) return;
+      var review = approvalReview(S.studio);
+      fill($('approve-body'), review.nodes);
+      $('approve-confirm').disabled = review.blocking.length > 0;
+      openDialog($('dlg-approve'));
+    });
+  });
+  $('approve-confirm').addEventListener('click', function () {
+    var d = S.studio; if (!d) return;
+    $('approve-confirm').disabled = true;
+    Api.data('apiWebApprove', S.wb, S.task, d.submission.submissionRecordId, d.revision).then(function (r) {
+      closeDialog($('dlg-approve'));
+      toast(r.message);
+      return openStudent(S.wb, S.task, d.submission.submissionRecordId);
+    }).catch(function (err) { closeDialog($('dlg-approve')); fail(err); }).then(function () { $('approve-confirm').disabled = false; });
+  });
+  $('btn-lock').addEventListener('click', function () {
+    var d = S.studio;
+    ask('Final-lock ' + d.submission.studentName + '?', 'Locked assessments cannot be changed or reassessed until an authorised teacher unlocks them.', [{ label: 'Cancel', value: null }, { label: 'Final lock', value: true, primary: true }]).then(function (ok) {
+      if (!ok) return;
+      return Api.data('apiWebLock', S.wb, S.task, d.submission.submissionRecordId).then(function (r) { toast(r.message); return openStudent(S.wb, S.task, d.submission.submissionRecordId); });
+    }).catch(fail);
+  });
+  $('btn-unlock').addEventListener('click', function () { $('unlock-reason').value = ''; $('unlock-typed').value = ''; openDialog($('dlg-unlock')); });
+  $('unlock-confirm').addEventListener('click', function () {
+    var d = S.studio;
+    Api.data('apiWebUnlock', S.wb, S.task, d.submission.submissionRecordId, $('unlock-reason').value, $('unlock-typed').value).then(function (r) {
+      closeDialog($('dlg-unlock')); toast(r.message); return openStudent(S.wb, S.task, d.submission.submissionRecordId);
+    }).catch(fail);
+  });
+  $('btn-reassess').addEventListener('click', function () {
+    var d = S.studio;
+    ask('Start a reassessment?', 'A new version is created for ' + d.submission.studentName + (d.submission.hasPendingEvidence ? ' using the evidence submitted after approval' : '') + '. The earlier approval stays unchanged in the history.',
+      [{ label: 'Cancel', value: null }, { label: 'Create reassessment', value: true, primary: true }]).then(function (ok) {
+      if (!ok) return;
+      return Api.data('apiWebReassess', S.wb, S.task, d.submission.submissionRecordId).then(function (r) { toast(r.message); S.dashboard = null; go(taskHash('studio', S.wb, S.task, r.submissionRecordId)); });
+    }).catch(fail);
+  });
+  $('btn-report').addEventListener('click', function () {
+    var d = S.studio;
+    Api.data('apiWebReport', S.wb, S.task, d.submission.submissionRecordId).then(function (r) {
+      var a = el('a', { href: r.dataUrl, download: r.fileName }); document.body.appendChild(a); a.click(); a.remove();
+    }).catch(fail);
+  });
+  $('btn-ai').addEventListener('click', function () {
+    var start = S.dirty ? ask('Save first?', 'Your unsaved changes must be saved before the AI drafts. Your saved selections are kept; AI suggestions are added beside them.', [{ label: 'Cancel', value: null }, { label: 'Save and draft', value: true, primary: true }]).then(function (ok) { return ok ? save() : false; }) : Promise.resolve(true);
+    start.then(function (ok) {
+      if (!ok || !S.studio) return;
+      var d = S.studio, sub = d.submission.submissionRecordId, wb = S.wb, task = S.task, mine = S.seq;
+      $('btn-ai').disabled = true;
+      return Api.call('apiWebRunAi', wb, task, sub, d.revision).then(function (res) {
+        if (res && res.success) { toast(res.message); if (mine === S.seq) return openStudent(wb, task, sub); return; }
+        if (res && res.unavailable) {
+          return ask('AI service unavailable', [el('p', { text: res.message }), el('p', { text: 'You can queue this student for when the service returns, or keep marking manually. Nothing is lost either way.' })],
+            [{ label: 'Continue manually', value: 'manual' }, { label: 'Queue for later', value: 'queue', primary: true }]).then(function (choice) {
+            if (choice === 'queue') return Api.data('apiWebQueueAiDrafts', wb, task, [sub], false).then(function (q) { toast(q.message); });
+          });
+        }
+        toast((res && res.message) || 'The AI draft did not complete.', true);
+      });
+    }).catch(fail).then(function () { $('btn-ai').disabled = false; });
+  });
+
+  /* ---------- 4. rubric review ---------------------------------------------- */
+  var CORE = ['A', 'B', 'C', 'D', 'E'];
+  function openRubric(wb, task) {
+    S.wb = wb; S.task = task;
+    showView('rubric');
+    $('rubric-back').href = taskHash('task', wb, task);
+    $('rubric-title').textContent = 'Rubric — ' + task;
+    fill($('rubric-status'), [el('p', { className: 'muted', text: 'Loading…' })]);
+    var mine = S.seq;
+    return Promise.all([Api.data('apiWebRubricSource', wb, task), Api.data('apiWebListSharedRubrics')]).then(function (res) {
+      if (mine !== S.seq) return;
+      var src = res[0];
+      S.rubricInfo = src;
+      var shared = $('rubric-shared'); clear(shared);
+      shared.appendChild(el('option', { value: '', text: res[1].length ? 'Choose a shared rubric' : 'No shared rubrics in Drive' }));
+      res[1].forEach(function (r) { shared.appendChild(el('option', { value: r.id, text: r.name })); });
+      var status = [];
+      status.push(el('div', { className: 'card' }, [
+        el('h2', { text: src.summary ? 'Active: ' + src.summary.name : 'No active rubric' }),
+        src.summary ? el('p', { text: src.summary.criteriaCount + ' criteria · ' + src.summary.observableCount + ' observables · ' + src.summary.totalMaxMarks + ' marks · ' + src.versions.length + ' version(s)' }) : null,
+        el('p', { className: 'small muted', text: 'Overall boundaries: ' + src.gradeScale.bands.map(function (b) { return b.letter + ' ≥ ' + b.min + '%'; }).join(', ') + '. Band weights: ' + CORE.map(function (k) { return k + ' ' + Math.round(src.gradeScale.weights[k] * 1000) / 10 + '%'; }).join(', ') + '.' }),
+        el('p', { className: 'banner ' + (src.referencePoints.matchesTarget ? 'ok' : 'warn') + ' small', text: src.referencePoints.message })
+      ]));
+      if (src.drift) status.push(el('div', { className: 'banner warn' }, [el('span', { text: 'The RubricRows sheet in this workbook has been edited and differs from the active rubric. ' }),
+        el('button', { type: 'button', className: 'btn small', text: 'Review the workbook version', onclick: function () { loadRows(src.sheetRows, src.summary ? src.summary.name + ' (edited in workbook)' : task, ''); } })]));
+      fill($('rubric-status'), status);
+      if (!S.rubricRows.length || S.rubricTask !== wb + '|' + task) {
+        S.rubricTask = wb + '|' + task;
+        loadRows(src.activeRows, src.summary ? src.summary.name : task + ' rubric', '');
+      } else renderRows();
+    }).catch(function (err) { if (mine === S.seq) fill($('rubric-status'), [el('div', { className: 'banner danger', text: err.message })]); });
+  }
+  function loadRows(rows, name, sourceId) {
+    S.rubricRows = (rows || []).map(function (r) { return { criterion: r.criterion || '', part: r.part || '', maxMarks: r.maxMarks === '' || r.maxMarks == null ? '' : r.maxMarks, band: r.band || '', description: r.description || '', outcome: r.outcome || '', section: r.section || '', weight: r.weight }; });
+    S.rubricSource = sourceId || '';
+    $('rubric-name').value = name || '';
+    $('rubric-confirm').checked = false;
+    renderRows();
+  }
+  function renderRows() {
+    var body = $('rubric-table').querySelector('tbody');
+    fill(body, S.rubricRows.map(function (r, i) {
+      function input(key, type, label) {
+        return el('td', {}, [el('input', { type: type || 'text', 'aria-label': label + ' (row ' + (i + 1) + ')', value: r[key] == null ? '' : String(r[key]), 'data-row': i, 'data-key': key })]);
+      }
+      return el('tr', {}, [input('criterion', 'text', 'Criterion'), input('part', 'text', 'Part'), input('maxMarks', 'number', 'Marks'), input('band', 'text', 'Band'),
+        el('td', {}, [el('textarea', { 'aria-label': 'Observable (row ' + (i + 1) + ')', 'data-row': i, 'data-key': 'description', value: r.description, rows: 2 })]),
+        input('outcome', 'text', 'Outcome'),
+        el('td', {}, [el('button', { type: 'button', className: 'btn small danger', text: 'Remove', 'aria-label': 'Remove row ' + (i + 1), onclick: function () { S.rubricRows.splice(i, 1); renderRows(); } })])]);
+    }));
+    $('rubric-count').textContent = '(' + S.rubricRows.length + ')';
+    var custom = {};
+    S.rubricRows.forEach(function (r) { var b = String(r.band || '').trim().toUpperCase(); if (b && CORE.indexOf(b) === -1) custom[b] = r.weight; });
+    fill($('rubric-weights'), Object.keys(custom).length ? [el('p', { className: 'small', text: 'These bands are not A–E, so each needs an explicit weight (0–1) — the share of marks earned when all its observables are evidenced:' })]
+      .concat(Object.keys(custom).map(function (b) { return el('label', { className: 'field' }, [el('span', { text: 'Weight for band "' + b + '"' }), el('input', { type: 'number', step: '0.01', min: '0', max: '1', 'data-weight': b, value: custom[b] == null ? '' : custom[b] })]); })) : []);
+    validateRows();
+  }
+  function validateRows() {
+    var errors = [];
+    var marks = {};
+    if (!S.rubricRows.length) errors.push('Add at least one row.');
+    S.rubricRows.forEach(function (r, i) {
+      if (!String(r.criterion).trim() || !String(r.band).trim() || !String(r.description).trim()) errors.push('Row ' + (i + 1) + ' needs a criterion, band and observable.');
+      var m = Number(r.maxMarks);
+      if (!(m > 0)) errors.push('Row ' + (i + 1) + ' needs marks above 0.');
+      var key = r.part + '|' + r.criterion;
+      if (marks[key] !== undefined && m && marks[key] !== m) errors.push('"' + r.criterion + '" has different marks on different rows.');
+      if (m) marks[key] = m;
+    });
+    var total = 0; Object.keys(marks).forEach(function (k) { total += marks[k]; });
+    fill($('rubric-validation'), errors.length ? [el('div', { className: 'banner danger' }, [el('ul', {}, errors.slice(0, 8).map(function (e) { return el('li', { text: e }); }))])] :
+      [el('p', { className: 'banner ok small', text: Object.keys(marks).length + ' criteria, ' + total + ' marks in total.' })]);
+    return errors;
+  }
+  $('rubric-table').addEventListener('input', function (e) {
+    var i = e.target.getAttribute('data-row'), k = e.target.getAttribute('data-key');
+    if (i === null || !k) return;
+    S.rubricRows[Number(i)][k] = k === 'maxMarks' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value;
+    if (k === 'band') renderRows(); else validateRows();
+  });
+  $('rubric-add-row').addEventListener('click', function () {
+    var last = S.rubricRows[S.rubricRows.length - 1] || {};
+    S.rubricRows.push({ criterion: last.criterion || '', part: last.part || '', maxMarks: last.maxMarks || '', band: '', description: '', outcome: last.outcome || '' });
+    renderRows();
+  });
+  $('rubric-load-active').addEventListener('click', function () { if (S.rubricInfo) loadRows(S.rubricInfo.activeRows, S.rubricInfo.summary ? S.rubricInfo.summary.name : '', ''); });
+  $('rubric-load-sheet').addEventListener('click', function () {
+    if (!S.rubricInfo || !S.rubricInfo.sheetRows.length) { toast('The RubricRows sheet has no rows for this task yet.', true); return; }
+    loadRows(S.rubricInfo.sheetRows, (S.rubricInfo.summary ? S.rubricInfo.summary.name : S.task) + ' (from workbook)', '');
+  });
+  $('rubric-load-shared').addEventListener('click', function () {
+    var id = $('rubric-shared').value;
+    if (!id) { toast('Choose a shared rubric first.', true); return; }
+    Api.data('apiWebPreviewRubric', S.wb, S.task, id).then(function (p) {
+      loadRows(p.rows, $('rubric-shared').selectedOptions[0].textContent, id);
+      if (p.validation && !p.validation.ok) toast('Loaded, with problems to fix: ' + p.validation.errors.slice(0, 2).join(' '), true);
+    }).catch(fail);
+  });
+  $('upload-rubric').addEventListener('click', function () {
+    var file = $('upload-file').files[0], name = $('upload-name').value.trim();
+    if (!file || !name) { toast('Choose a file and enter a rubric name.', true); return; }
+    if (file.size > 8 * 1024 * 1024) { toast('Choose a file under 8 MB.', true); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var base64 = String(reader.result).split(',')[1] || '';
+      var mime = file.type || (/\.md$/i.test(file.name) ? 'text/markdown' : 'text/plain');
+      Api.data('apiWebUploadRubric', name, { base64: base64, mimeType: mime, name: file.name }).then(function (r) {
+        toast(r.message || 'Rubric extracted. Review it below.');
+        return Api.data('apiWebPreviewRubric', S.wb, S.task, r.rubricFileId).then(function (p) { loadRows(p.rows, name, r.rubricFileId); });
+      }).catch(fail);
+    };
+    reader.onerror = function () { toast('The file could not be read.', true); };
+    reader.readAsDataURL(file);
+  });
+  $('rubric-activate').addEventListener('click', function () {
+    if (validateRows().length) { toast('Fix the rubric problems first.', true); return; }
+    if (!$('rubric-confirm').checked) { toast('Tick the confirmation after checking the rows.', true); return; }
+    var weights = {};
+    document.querySelectorAll('[data-weight]').forEach(function (w) { weights[w.getAttribute('data-weight')] = w.value; });
+    var name = $('rubric-name').value.trim() || S.task + ' rubric';
+    Api.data('apiWebActivateRubric', S.wb, S.task, name, S.rubricSource, S.rubricRows, weights, true).then(function (r) {
+      toast(r.message || 'Rubric activated.'); S.rubricRows = []; return openRubric(S.wb, S.task);
+    }).catch(fail);
+  });
+
+  /* ---------- 5. create workbook --------------------------------------------- */
+  var courseCache = null;
+  function loadCourses(select) {
+    var p = courseCache ? Promise.resolve(courseCache) : Api.data('apiWebListTeacherCourses').then(function (r) { courseCache = r.courses || []; return courseCache; });
+    return p.then(function (courses) {
+      clear(select);
+      select.appendChild(el('option', { value: '', text: courses.length ? 'Choose a class' : 'No active Classroom classes found' }));
+      courses.forEach(function (c) { select.appendChild(el('option', { value: c.id, text: c.name + (c.section ? ' — ' + c.section : '') })); });
+    });
+  }
+  function loadCoursework(courseId, select) {
+    clear(select);
+    if (!courseId) { select.appendChild(el('option', { value: '', text: 'Choose a class first' })); return Promise.resolve([]); }
+    select.appendChild(el('option', { value: '', text: 'Loading assignments…' }));
+    return Api.data('apiWebListCourseWork', courseId).then(function (r) {
+      var list = r.coursework || [];
+      clear(select);
+      select.appendChild(el('option', { value: '', text: list.length ? 'Choose an assignment (' + list.length + ')' : 'No assignments in this class' }));
+      list.forEach(function (w) {
+        select.appendChild(el('option', { value: w.id, 'data-title': w.title, text: w.title + ' — ' + (w.dueDate ? 'due ' + w.dueDate : 'no due date') + (w.maxPoints ? ' · ' + w.maxPoints + ' pts' : ' · ungraded') + (w.state && w.state !== 'PUBLISHED' ? ' · ' + w.state.toLowerCase() : '') }));
+      });
+      return list;
+    });
+  }
+  function openCreate() {
+    showView('create');
+    $('create-year').value = $('create-year').value || new Date().getFullYear();
+    $('create-category').value = $('create-category').value || Store.get('category') || '';
+    clear($('create-errors'));
+    toggleCreateMode();
+    loadCourses($('create-course')).catch(fail);
+    Api.data('apiWebListSharedRubrics').then(function (list) {
+      var sel = clear($('create-rubric'));
+      sel.appendChild(el('option', { value: '', text: 'None — choose later' }));
+      list.forEach(function (r) { sel.appendChild(el('option', { value: r.id, text: r.name })); });
+    }).catch(function () { /* optional */ });
+  }
+  function createMode() { var r = document.querySelector('input[name="create-mode"]:checked'); return r ? r.value : 'classroom'; }
+  function toggleCreateMode() { $('create-classroom').hidden = createMode() !== 'classroom'; }
+  document.querySelectorAll('input[name="create-mode"]').forEach(function (r) { r.addEventListener('change', toggleCreateMode); });
+  $('create-course').addEventListener('change', function () {
+    var opt = $('create-course').selectedOptions[0];
+    var guess = opt ? (/\b(\d{1,2}[A-Za-z][A-Za-z0-9]*)\b/.exec(opt.textContent) || [])[1] : '';
+    if (guess && !$('create-code').value) $('create-code').value = guess.toUpperCase();
+    loadCoursework($('create-course').value, $('create-coursework')).catch(fail);
+  });
+  $('create-coursework').addEventListener('change', function () {
+    var opt = $('create-coursework').selectedOptions[0];
+    if (opt && opt.getAttribute('data-title') && !$('create-task').value) $('create-task').value = opt.getAttribute('data-title').slice(0, 100);
+  });
+  $('create-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var mode = createMode();
+    var errors = [];
+    var code = $('create-code').value.trim(), task = $('create-task').value.trim(), year = $('create-year').value.trim(), category = $('create-category').value.trim();
+    function check(id, ok, msg) { $(id).classList.toggle('invalid', !ok); if (!ok) errors.push(msg); }
+    if (mode === 'classroom') { check('create-course', !!$('create-course').value, 'Choose a class.'); check('create-coursework', !!$('create-coursework').value, 'Choose an assignment.'); }
+    check('create-code', /^(7|8|9|10|11|12)/.test(code), 'Course code must start with 7, 8, 9, 10, 11 or 12.');
+    check('create-task', !!task && !/[\/\\]/.test(task), 'Enter a task name without slashes.');
+    check('create-year', /^20\d{2}$/.test(year), 'Enter a four-digit year.');
+    fill($('create-errors'), errors.length ? [el('div', { className: 'banner danger' }, [el('ul', {}, errors.map(function (m) { return el('li', { text: m }); }))])] : []);
+    if (errors.length) return;
+    Store.set('category', category);
+    $('create-submit').disabled = true;
+    var req = mode === 'classroom' ?
+      Api.data('apiWebCreateFromClassroom', $('create-course').value, $('create-coursework').value, code, task, year, category, $('create-rubric').value) :
+      Api.data('apiWebCreateWorkbook', code, task, year, $('create-rubric').value, '', null, category);
+    req.then(function (r) {
+      toast(r.message);
+      var wb = r.workbook.id;
+      return loadWorkbooks().then(function () { go(taskHash($('create-rubric').value ? 'rubric' : 'task', wb, task)); });
+    }).catch(function (err) { fill($('create-errors'), [el('div', { className: 'banner danger', text: err.message })]); })
+      .then(function () { $('create-submit').disabled = false; });
+  });
+
+  /* ---------- 6. link Classroom -------------------------------------------- */
+  function openLink(wb, task) {
+    S.wb = wb; S.task = task;
+    showView('link');
+    $('link-back').href = taskHash('task', wb, task);
+    $('link-title').textContent = 'Link a Classroom assignment to ' + task;
+    loadCourses($('link-course')).catch(fail);
+    loadCoursework('', $('link-coursework'));
+  }
+  $('link-course').addEventListener('change', function () { loadCoursework($('link-course').value, $('link-coursework')).catch(fail); });
+  $('link-save').addEventListener('click', function () {
+    if (!$('link-course').value || !$('link-coursework').value) { toast('Choose a class and an assignment.', true); return; }
+    Api.data('apiWebLinkClassroomAssignment', S.wb, S.task, $('link-course').value, $('link-coursework').value).then(function (r) {
+      toast(r.message); go(taskHash('task', S.wb, S.task));
+    }).catch(fail);
+  });
+
+  /* ---------- 7. evaluation / register -------------------------------------- */
+  function openRegister(wb, task) {
+    S.wb = wb; S.task = task;
+    showView('register');
+    $('register-back').href = taskHash('task', wb, task);
+    $('register-title').textContent = 'Evaluation and register — ' + task;
+    var mine = S.seq;
+    return checkRegister().then(function () { if (mine !== S.seq) return; });
+  }
+  function checkRegister() {
+    return Api.data('apiWebRegisterPreview', S.wb, S.task, $('register-doc').value.trim()).then(function (p) {
+      var c = p.context;
+      var pairs = [['Task', c.taskName], ['Course', [c.courseCode, c.year].filter(Boolean).join(' ')], ['Class', c.className], ['Classroom assignment', c.assignmentTitle],
+        ['Dates', c.dates], ['Outcomes', c.outcomes || '(none recorded in the rubric)'], ['Grade distribution', c.gradeDistribution]];
+      fill($('register-context'), [].concat.apply([], pairs.filter(function (p) { return p[1]; }).map(function (p) { return [el('dt', { text: p[0] }), el('dd', { text: p[1] })]; })));
+      $('register-destination').textContent = 'Destination: ' + p.destination.name + (p.destination.type === 'doc' ? ' (a section will be appended)' : '');
+      S.registerDestination = p.destination;
+      return p;
+    }).catch(function (err) { $('register-destination').textContent = err.message; S.registerDestination = null; throw err; });
+  }
+  $('register-check').addEventListener('click', function () { checkRegister().catch(function () { /* message shown */ }); });
+  $('register-commit').addEventListener('click', function () {
+    var entry = { teacherEvaluation: $('reg-evaluation').value.trim(), teachingVariations: $('reg-variations').value.trim(), adjustments: $('reg-adjustments').value.trim(), studentFeedbackSummary: $('reg-summary').value.trim() };
+    if (!entry.teacherEvaluation) { $('reg-evaluation').classList.add('invalid'); toast('Write or dictate the teacher evaluation first.', true); return; }
+    $('reg-evaluation').classList.remove('invalid');
+    checkRegister().then(function (p) {
+      return ask('Commit this entry?', [el('p', {}, [el('strong', { text: 'Destination: ' }), document.createTextNode(p.destination.name)]),
+        el('pre', { className: 'text', text: 'Teacher evaluation: ' + entry.teacherEvaluation + (entry.teachingVariations ? '\nVariations: ' + entry.teachingVariations : '') + (entry.adjustments ? '\nAdjustments: ' + entry.adjustments : '') + (entry.studentFeedbackSummary ? '\nStudent feedback: ' + entry.studentFeedbackSummary : '') })],
+        [{ label: 'Keep editing', value: null }, { label: 'Commit', value: true, primary: true }]).then(function (ok) {
+        if (!ok) return;
+        return Api.call('apiWebRegisterCommit', S.wb, S.task, entry, $('register-doc').value.trim(), true).then(function (r) { toast(r.message, !r.success); });
+      });
+    }).catch(fail);
+  });
+
+  /* ---------- 8. results, messages, samples ---------------------------------- */
+  function openResults(wb, task) {
+    S.wb = wb; S.task = task;
+    showView('results');
+    $('results-back').href = taskHash('task', wb, task);
+    $('results-title').textContent = 'Class results — ' + task;
+    clear($('results-messages')); clear($('samples-list'));
+    return Api.data('apiWebGetClassTableData', wb, task).then(function (d) {
+      var rows = (d.rows || []).map(function (r) {
+        return el('tr', {}, [el('td', { text: r.studentName }), el('td', { text: r.status }), el('td', { text: r.finalScore == null ? '—' : fmtNum(r.finalScore, 2) }), el('td', { text: r.percent == null ? '—' : fmtNum(r.percent, 1) + '%' }), el('td', { text: r.grade })]);
+      });
+      fill($('results-table'), [el('table', { className: 'simple' }, [el('thead', {}, [el('tr', {}, ['Student', 'State', 'Final', '%', 'Grade'].map(function (h) { return el('th', { scope: 'col', text: h }); }))]), el('tbody', {}, rows)])]);
+    }).catch(fail);
+  }
+  $('results-sync').addEventListener('click', function () { Api.data('apiWebSyncClassTable', S.wb, S.task, { termPair: $('results-term').value.trim() }).then(function (r) { toast(r.message); }).catch(fail); });
+  $('results-flags').addEventListener('click', function () {
+    Api.data('apiWebFlagIncompleteSubmissions', S.wb, S.task).then(function (f) {
+      var list = f.flags.notSubmitted.concat(f.flags.unreadable);
+      if (!list.length) { fill($('results-messages'), [el('p', { className: 'banner ok', text: 'Every current submission has files attached.' })]); return; }
+      return Api.data('apiWebDraftClassroomMessages', S.wb, S.task, list, 'Please check your files and resubmit.').then(function (dr) {
+        fill($('results-messages'), dr.drafts.map(function (m) { return el('div', { className: 'card' }, [el('strong', { text: m.studentName + ' — ' + m.reason }), el('pre', { className: 'text', text: m.message })]); })
+          .concat([el('button', { type: 'button', className: 'btn', text: 'Record these drafts in the workbook', onclick: function () {
+            Api.data('apiWebSendClassroomMessages', S.wb, S.task, dr.drafts, true).then(function (r) { toast(r.message); }).catch(fail);
+          } })]));
+      });
+    }).catch(fail);
+  });
+  $('samples-suggest').addEventListener('click', function () {
+    Api.data('apiWebSuggestWorkSamples', S.wb, S.task, $('samples-policy').value).then(function (s) {
+      S.samples = s.proposals;
+      fill($('samples-list'), ['high', 'med', 'low'].map(function (k) { var p = s.proposals[k]; return el('p', { text: k.toUpperCase() + ': ' + p.studentName + ' — ' + p.grade + ', ' + fmtNum(p.percent, 1) + '% (' + p.reason + ')' }); }));
+    }).catch(fail);
+  });
+  $('samples-save').addEventListener('click', function () {
+    if (!S.samples) { toast('Suggest samples first.', true); return; }
+    var dest = { highFolderId: $('samples-high').value.trim(), medFolderId: $('samples-med').value.trim(), lowFolderId: $('samples-low').value.trim() };
+    ask('Copy work samples?', 'Copies of the three students\' first files are placed in the folders. Originals are not changed.', [{ label: 'Cancel', value: null }, { label: 'Copy', value: true, primary: true }]).then(function (ok) {
+      if (!ok) return;
+      return Api.call('apiWebSaveWorkSamples', S.wb, S.task, S.samples, dest, true).then(function (r) { toast(r.message, !r.success); });
+    }).catch(fail);
+  });
+
+  /* ---------- 9. settings --------------------------------------------------- */
+  function openSettings() {
+    showView('settings');
+    var mine = S.seq;
+    Api.data('apiWebGetSettings').then(function (d) {
+      if (mine !== S.seq) return;
+      S.settings = d.settings;
+      var o = d.settings.outputFormat, a = d.settings.aiProviders;
+      $('out-grade').value = o.gradeDisplay; $('out-classroom').value = o.classroomGradeMode;
+      $('out-firstname').checked = !!o.useFirstName; $('out-include-grade').checked = !!o.includeGradeInComment;
+      $('out-template').value = d.settings.feedbackTemplate || '';
+      $('ai-draft').value = a.draftProvider; $('ai-vision').value = a.visionProvider; $('ai-gemini-model').value = a.geminiModel || '';
+      $('ai-qwen-model').value = a.qwenModel || ''; $('ai-jev-model').value = a.jevModel || '';
+      var p = d.providers;
+      $('ai-status').textContent = 'Gemini key: ' + (p.gemini.configured ? 'saved' : 'not set') + ' · Qwen: ' + (p.qwen.configured ? p.qwen.host : 'not set') + ' · JEV: ' + (p.jev.configured ? p.jev.host : 'not set');
+    }).catch(fail);
+    Api.data('apiWebTriggerStatus').then(function (t) {
+      $('trigger-status').textContent = 'Hourly Classroom sync: ' + (t.hourlySync ? 'installed' : 'not installed') + ' · AI queue: ' + (t.aiQueue ? 'installed' : 'not installed') + '. ' + t.note;
+    }).catch(function (err) { $('trigger-status').textContent = err.message; });
+    loadPrompts();
+    var last = Store.get('last');
+    if (last && last.wb) {
+      Api.data('apiWebGetGradeScale', last.wb).then(function (sc) {
+        fill($('scale-view'), [el('p', { text: 'Workbook from "' + last.task + '": boundaries ' + sc.bands.map(function (b) { return b.letter + ' ≥ ' + b.min + '%'; }).join(', ') }),
+          el('p', { text: 'Band weights: ' + CORE.map(function (k) { return k + ' ' + Math.round(sc.weights[k] * 1000) / 10 + '%'; }).join(', ') }),
+          el('p', { className: 'muted', text: 'Edit the Setup sheet of the workbook to change these. Approved results never change; new rubric versions pick up the new values.' })]);
+      }).catch(function () { clear($('scale-view')); });
+    } else fill($('scale-view'), [el('p', { className: 'muted', text: 'Open a workbook first.' })]);
+  }
+  $('health-run').addEventListener('click', function () {
+    var last = Store.get('last');
+    fill($('health-results'), [el('p', { className: 'muted', text: 'Running…' })]);
+    Api.data('apiWebHealthCheck', last && last.wb || '').then(function (h) {
+      var label = { pass: '✓', warn: '!', fail: '✗', info: 'i' };
+      fill($('health-results'), [el('p', { text: h.counts.pass + ' passed · ' + h.counts.warn + ' warnings · ' + h.counts.fail + ' failed' }),
+        el('div', { className: 'table-wrap' }, [el('table', { className: 'simple' }, [el('tbody', {}, h.checks.map(function (c) {
+          return el('tr', {}, [el('td', { text: label[c.status] + ' ' + c.status }), el('td', { text: c.area }), el('td', { text: c.check }), el('td', { className: 'small', text: c.detail })]);
+        }))])])]);
+    }).catch(fail);
+  });
+  $('triggers-install').addEventListener('click', function () { Api.data('apiWebInstallTriggers').then(function (r) { toast(r.message || 'Done.'); openSettings(); }).catch(fail); });
+  $('triggers-remove').addEventListener('click', function () { Api.data('apiWebRemoveTriggers').then(function (r) { toast(r.message || 'Done.'); openSettings(); }).catch(fail); });
+  $('out-save').addEventListener('click', function () {
+    Api.data('apiWebSaveSettings', { outputFormat: { gradeDisplay: $('out-grade').value, classroomGradeMode: $('out-classroom').value, useFirstName: $('out-firstname').checked, includeGradeInComment: $('out-include-grade').checked },
+      feedbackTemplate: $('out-template').value }).then(function () { toast('Output format saved.'); }).catch(fail);
+  });
+  $('ai-save').addEventListener('click', function () {
+    Api.data('apiWebSaveSettings', { aiProviders: { draftProvider: $('ai-draft').value, visionProvider: $('ai-vision').value, geminiModel: $('ai-gemini-model').value.trim(), qwenModel: $('ai-qwen-model').value.trim(), jevModel: $('ai-jev-model').value.trim() } })
+      .then(function () { toast('AI provider choices saved.'); }).catch(fail);
+  });
+  $('gemini-save').addEventListener('click', function () {
+    var k = $('gemini-key').value.trim(); if (!k) { toast('Paste a key first.', true); return; }
+    Api.data('apiWebSetGeminiKey', k).then(function (r) { $('gemini-key').value = ''; toast(r.message || 'Key saved.'); }).catch(fail);
+  });
+  function testProvider(name) { $('ai-status').textContent = 'Testing ' + name + '…'; Api.call('apiWebTestAiProvider', name).then(function (r) { $('ai-status').textContent = (r.success ? '✓ ' : '✗ ') + r.message; }).catch(function (err) { $('ai-status').textContent = '✗ ' + err.message; }); }
+  $('gemini-test').addEventListener('click', function () { testProvider('gemini'); });
+  ['qwen', 'jev'].forEach(function (p) {
+    $(p + '-save').addEventListener('click', function () {
+      Api.data('apiWebSetAiProviderConfig', p, { endpoint: $(p + '-endpoint').value.trim(), key: $(p + '-key').value.trim() }).then(function () {
+        $(p + '-key').value = ''; toast(p.toUpperCase() + ' saved.'); openSettings();
+      }).catch(fail);
+    });
+    $(p + '-test').addEventListener('click', function () { testProvider(p); });
+  });
+  function loadPrompts() {
+    Api.data('apiWebPromptList').then(function (d) {
+      fill($('prompt-list'), d.versions.map(function (v) {
+        var tests = v.tests || [];
+        var last = tests[tests.length - 1];
+        return el('div', { className: 'card' }, [
+          el('div', { className: 'row between' }, [el('strong', { text: v.id + (v.id === d.active ? ' (active)' : '') }), el('span', { className: 'pill neutral', text: v.status })]),
+          v.note ? el('p', { className: 'small', text: v.note }) : null,
+          last ? el('p', { className: 'small', text: 'Last test: ' + last.completed + ' case(s), mean agreement ' + (last.meanAgreement == null ? '—' : Math.round(last.meanAgreement * 100) + '%') + ', ' + last.potentialChanges.length + ' potential grade change(s) — not applied.' }) : null,
+          el('details', {}, [el('summary', { className: 'small', text: 'Show prompt' }), el('pre', { className: 'text', text: v.text })]),
+          el('div', { className: 'row' }, [
+            el('button', { type: 'button', className: 'btn small', text: 'Test on current task', onclick: function () {
+              var lastCtx = Store.get('last');
+              if (!lastCtx) { toast('Open a task with approved work first.', true); return; }
+              Api.call('apiWebPromptTest', v.id, lastCtx.wb, lastCtx.task, 3).then(function (r) { toast(r.message, !r.success); loadPrompts(); }).catch(fail);
+            } }),
+            v.id !== d.active ? el('button', { type: 'button', className: 'btn small', text: 'Activate…', onclick: function () {
+              var input = el('input', { type: 'text', 'aria-label': 'Type ACTIVATE' });
+              ask('Activate prompt ' + v.id + '?', [el('p', { text: 'New AI drafts will use this prompt. Existing drafts and approvals are not changed. Type ACTIVATE to confirm.' }), input],
+                [{ label: 'Cancel', value: null }, { label: 'Activate', value: true, primary: true }]).then(function (ok) {
+                if (!ok) return;
+                return Api.data('apiWebPromptActivate', v.id, input.value).then(function (r) { toast(r.message); loadPrompts(); });
+              }).catch(fail);
+            } }) : null
+          ])
+        ]);
+      }));
+    }).catch(function (err) { fill($('prompt-list'), [el('p', { className: 'banner danger', text: err.message })]); });
+  }
+  $('prompt-create').addEventListener('click', function () {
+    Api.data('apiWebPromptCreate', $('prompt-text').value, '').then(function (r) { toast(r.message); $('prompt-text').value = ''; loadPrompts(); }).catch(fail);
+  });
+  $('example-preview').addEventListener('click', function () {
+    var last = Store.get('last'); if (!last) { toast('Open a task first so names can be checked against its roster.', true); return; }
+    Api.data('apiWebAddRefinementExample', last.wb, last.task, $('example-text').value, false).then(function (r) {
+      $('example-result').textContent = r.text; $('example-result').hidden = false; $('example-save').disabled = false;
+    }).catch(fail);
+  });
+  $('example-save').addEventListener('click', function () {
+    var last = Store.get('last'); if (!last) return;
+    Api.data('apiWebAddRefinementExample', last.wb, last.task, $('example-text').value, true).then(function (r) {
+      toast(r.message); $('example-text').value = ''; $('example-result').hidden = true; $('example-save').disabled = true;
+    }).catch(fail);
+  });
+  $('example-text').addEventListener('input', function () { $('example-save').disabled = true; });
+
+  /* ---------- start ---------------------------------------------------------- */
+  function init() {
+    if (window.__LESSON_GRADER_PREVIEW__) {
+      document.body.classList.add('preview-mode');
+      ['gemini-key', 'gemini-save', 'qwen-key', 'jev-key', 'upload-rubric'].forEach(function (id) { $(id).disabled = true; });
+    }
+    Api.data('apiWebAuthStatus').then(function (a) {
+      if (!a.authorised) { showView('denied'); return; }
+      S.user = a.email; S.canUnlock = !!a.canUnlock; S.ready = true;
+      $('who').textContent = a.email;
+      route();
+    }).catch(function (err) { $('denied-detail').textContent = err.message; showView('denied'); });
+  }
+  $('retry-auth').addEventListener('click', init);
+  init();
+})();
+</script>

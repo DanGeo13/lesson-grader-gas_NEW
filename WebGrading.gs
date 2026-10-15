@@ -350,6 +350,7 @@ var WebGrading = (function () {
       profile: a.profile, assessmentId: a.assessmentId, criteriaMap: a.states,
       feedback: a.feedback, attachments: a.attachments, history: history,
       scores: a.scores, flags: a.flags, snapshot: snapshot,
+      evidenceHistory: typeof EvidenceService !== 'undefined' ? EvidenceService.history(ss, submissionId) : [],
       comparison: compareWithParent(ss, sub, a.profile, a.states),
       revision: lastRevision(ss, submissionId), readOnly: readOnly, locked: locked,
       canUnlock: locked && WebAccess.canUnlock(user),
@@ -1434,6 +1435,12 @@ function apiWebSaveDraft(workbookId, taskName, submissionId, criteria, feedback,
 function apiWebBuildFeedback(workbookId, taskName, submissionId, criteria, generalObservation) {
   WebAccess.requireTeacher();
   return WebGrading.buildFeedback(workbookId, taskName, submissionId, criteria, generalObservation);
+}
+function apiWebEvidenceVersion(workbookId, taskName, submissionId, versionId) {
+  WebAccess.requireTeacher();
+  var target = WebGrading.openTask(workbookId, taskName);
+  WebGrading.selectSubmission(target.ss, target.task, submissionId);
+  return { success: true, data: EvidenceService.versionText(target.ss, submissionId, versionId) };
 }
 function apiWebApprove(workbookId, taskName, submissionId, revision) {
   WebAccess.requireTeacher();

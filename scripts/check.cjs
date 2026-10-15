@@ -48,6 +48,17 @@ for (const file of files) {
 if (doGet !== 1) throw new Error(`Expected one doGet, found ${doGet}`);
 console.log('✓ one doGet');
 
+/* The served page must resolve to plain HTML with every partial present. */
+const { renderWebApp } = require('./render-webapp.cjs');
+const served = renderWebApp();
+checkHtmlScripts('WebApp.html (rendered)', served);
+for (const call of served.matchAll(/Api\.(?:data|call)\('([A-Za-z0-9_]+)'/g)) {
+  const name = call[1];
+  const declared = files.filter(f => f.endsWith('.gs')).some(f => new RegExp('^function ' + name + '\\s*\\(', 'm').test(fs.readFileSync(path.join(root, f), 'utf8')));
+  if (!declared) throw new Error('WebAppClient calls ' + name + ' but no .gs file declares it.');
+}
+console.log('✓ rendered web app parses and every client API call has a server function');
+
 /* Static launcher shipped to GitHub Pages (site/index.html). */
 const siteDir = path.join(root, 'site');
 if (fs.existsSync(siteDir)) {
