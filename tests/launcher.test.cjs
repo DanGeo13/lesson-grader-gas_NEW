@@ -25,11 +25,16 @@ function gas({ email = 'dan@school.edu.au', properties = {} } = {}) {
       })
     },
     HtmlService: {
-      createHtmlOutputFromFile: name => {
-        const out = { file: name, title: '' };
-        out.setTitle = value => { out.title = value; return out; };
-        return out;
-      }
+      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
+      createTemplateFromFile: name => ({
+        evaluate: () => {
+          const out = { file: name, title: '', meta: {}, frame: 'DEFAULT' };
+          out.setTitle = value => { out.title = value; return out; };
+          out.addMetaTag = (key, value) => { out.meta[key] = value; return out; };
+          out.setXFrameOptionsMode = value => { out.frame = value; return out; };
+          return out;
+        }
+      })
     },
     ContentService: {
       MimeType: { JSON: 'application/json', JAVASCRIPT: 'application/javascript' },
@@ -40,7 +45,7 @@ function gas({ email = 'dan@school.edu.au', properties = {} } = {}) {
         return out;
       }
     }
-  }).load('WebAccess.gs', 'WebAppIntegration.gs');
+  }).load('AppConfig.gs', 'WebAccess.gs', 'WebAppIntegration.gs');
   return { g, outputs };
 }
 
@@ -51,6 +56,15 @@ test('doGet still serves the Apps Script web app when no launcher probe is reque
   assert.equal(output.title, 'Lesson Grader');
   assert.equal(g.doGet().file, 'WebApp');
   assert.equal(g.doGet({ parameter: { usp: 'sharing' } }).file, 'WebApp');
+  // HtmlService ignores an in-file viewport tag; doGet must add it (REVIEW.md F05).
+  assert.equal(output.meta.viewport, 'width=device-width, initial-scale=1');
+  // Framing by other origins stays blocked unless the owner opts in (F34).
+  assert.equal(output.frame, 'DEFAULT');
+});
+
+test('owner can opt in to launcher embedding; default stays non-embeddable', () => {
+  const { g } = gas({ properties: { LESSON_GRADER_ALLOW_EMBED: 'true' } });
+  assert.equal(g.doGet({ parameter: {} }).frame, 'ALLOWALL');
 });
 
 test('launcher probe answers JSON and JSONP without leaking the key, allowlist or full email', () => {

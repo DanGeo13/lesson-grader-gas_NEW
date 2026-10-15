@@ -368,7 +368,29 @@ var Utils = (function() {
       return 'Teacher';
     }
   }
+  /* Feedback text -> Sheets rich text. Only **bold** is interpreted; every
+     other character is written literally. This helper was referenced by the
+     markbook sync but missing, which half-applied legacy approvals (F08). */
+  function buildRichTextFromMarkdown(markdown) {
+    var src = String(markdown == null ? '' : markdown);
+    var plain = '', spans = [], re = /\*\*([^*]+)\*\*/g, last = 0, m;
+    while ((m = re.exec(src))) {
+      plain += src.slice(last, m.index);
+      var start = plain.length;
+      plain += m[1];
+      spans.push([start, plain.length]);
+      last = re.lastIndex;
+    }
+    plain += src.slice(last);
+    var builder = SpreadsheetApp.newRichTextValue().setText(plain);
+    if (spans.length) {
+      var bold = SpreadsheetApp.newTextStyle().setBold(true).build();
+      spans.forEach(function (r) { if (r[1] > r[0]) builder.setTextStyle(r[0], r[1], bold); });
+    }
+    return builder.build();
+  }
   return {
+    buildRichTextFromMarkdown: buildRichTextFromMarkdown,
     generateUuid: generateUuid,
     formatDate: formatDate,
     safeJsonParse: safeJsonParse,

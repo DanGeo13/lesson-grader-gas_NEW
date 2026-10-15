@@ -26,6 +26,10 @@ for (const file of files) {
   if (file.endsWith('.gs')) {
     const content = fs.readFileSync(path.join(root, file), 'utf8');
     new vm.Script(content, { filename: file });
+    /* Apps Script does not guarantee file load order, so every file must load
+       on its own without touching another module or a Google service. */
+    try { vm.runInContext(content, vm.createContext({}), { filename: file }); }
+    catch (err) { throw new Error(file + ' must load without other files or services (load-order independence): ' + err.message); }
     doGet += (content.match(/^function doGet\s*\(/gm) || []).length;
     if (file === 'Code.gs') {
       for (const name of ['Config', 'Sheets', 'AssessmentService', 'ClassroomService', 'GeminiService']) {

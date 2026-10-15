@@ -1272,7 +1272,6 @@
         bands.push({ letter: letter, min: parseFloat(el.value), max: parseFloat(maxEl.value) });
       });
       var patch = {
-        thresholds: bands,
         deductions: {
           type: $('deduct-type').value,
           rate: parseFloat($('deduct-rate').value),
@@ -1288,7 +1287,6 @@
           jevSubjectCode: $('jev-code').value
         }
       };
-      if ($('gemini-key').value) patch.geminiApiKey = $('gemini-key').value;
       try {
         var res = await request('apiWebSaveSettings', [patch]);
         notify(res.message);

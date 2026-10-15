@@ -1367,15 +1367,30 @@ var LessonGraderLauncherApi = (function () {
   return { PARAMETER: PARAMETER, requested: requested, respond: respond };
 })();
 
+/* HTML partials the web app shell may include. Closed list: include() is a
+ * global, so it must never return arbitrary project files. */
+var WEB_PARTIALS = { WebAppStyles: true, WebAppClient: true };
+
+function include(name) {
+  if (!Object.prototype.hasOwnProperty.call(WEB_PARTIALS, name)) throw new Error('Unknown partial.');
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
+}
+
 /*
  * Keep this as the only doGet in the entire Apps Script project.
- * Remove it only if another current, intentional doGet exists elsewhere.
- * A request without the launcher parameter behaves exactly as before.
+ * A request without the launcher parameter serves the web app.
+ * HtmlService ignores <meta name="viewport"> inside the file, so the viewport
+ * is added here (REVIEW.md F05). Framing by other sites stays blocked unless
+ * the owner sets LESSON_GRADER_ALLOW_EMBED=true for the GitHub launcher (F34).
  */
 function doGet(e) {
   var call = LessonGraderLauncherApi.requested(e);
   if (call) return LessonGraderLauncherApi.respond(call, (e && e.parameter) || {});
-  return HtmlService
-    .createHtmlOutputFromFile('WebApp')
-    .setTitle('Lesson Grader');
+  var output = HtmlService.createTemplateFromFile('WebApp').evaluate()
+    .setTitle('Lesson Grader')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  if (AppConfig.flag(AppConfig.PROPS.ALLOW_EMBED)) {
+    output.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  return output;
 }

@@ -937,103 +937,56 @@ var WebGrading = (function () {
         var item = selections[tier];
         var folderId = destinations && destinations[tier + 'FolderId'];
         var label = tier.toUpperCase();
-        var copyId = '';
-        var copyUrl = '';
-        if (folderId && item.file && item.file.fileId) {
+        var outcome = { tier: label, student: text(item.studentName), copied: false, fileId: '', link: '', message: '' };
+        if (!folderId) outcome.message = 'No destination folder chosen; nothing copied.';
+        else if (!item.file || !item.file.fileId) outcome.message = 'Student has no Drive file to copy.';
+        else {
           try {
             var srcFile = DriveApp.getFileById(item.file.fileId);
             var destFolder = DriveApp.getFolderById(folderId);
-            var newName = '[' + label + '] ' + item.studentName + ' - ' + target.task + ' (Sample)';
-            var copied = srcFile.makeCopy(newName, destFolder);
-            copyId = copied.getId();
-            copyUrl = copied.getUrl();
-          } catch (e) {
-            copyUrl = item.file.link || ('https://drive.google.com/file/d/' + item.file.fileId);
-          }
+            var copied = srcFile.makeCopy('[' + label + '] ' + text(item.studentName) + ' - ' + target.task + ' (Sample)', destFolder);
+            outcome.copied = true; outcome.fileId = copied.getId(); outcome.link = copied.getUrl();
+            outcome.message = 'Copied.';
+          } catch (e) { outcome.message = 'Copy failed: ' + errString(e); }
         }
         append(ss, 'AuditLog', {
           AuditID: uid(), TaskName: target.task, Action: 'SampleSaved_' + label,
-          TargetID: copyId || (item.file && item.file.fileId) || item.submissionRecordId, TargetURL: copyUrl,
-          ActorEmail: user, Timestamp: now(), Status: 'Saved',
-          DetailsJSON: JSON.stringify({ tier: label, student: item.studentName, score: item.score, grade: item.grade })
+          TargetID: outcome.fileId || '', TargetURL: outcome.link, ActorEmail: user, Timestamp: now(),
+          Status: outcome.copied ? 'Saved' : 'Failed',
+          DetailsJSON: JSON.stringify({ tier: label, student: item.studentName, grade: item.grade, message: outcome.message })
         });
-        results.push({ tier: label, student: item.studentName, fileId: copyId || (item.file && item.file.fileId), link: copyUrl });
+        results.push(outcome);
       }
+      var copiedCount = results.filter(function (r) { return r.copied; }).length;
       return {
-        success: true,
-        message: 'Successfully placed HIGH, MED, and LOW work samples into designated folders.',
+        success: copiedCount === tiers.length,
+        partial: copiedCount > 0 && copiedCount < tiers.length,
+        message: copiedCount === tiers.length ? 'Copied HIGH, MED and LOW samples into their folders.' :
+          'Copied ' + copiedCount + ' of 3 samples. ' + results.filter(function (r) { return !r.copied; }).map(function (r) { return r.tier + ': ' + r.message; }).join(' '),
         results: results
       };
     } finally { lock.releaseLock(); }
   }
 
-  function previewRegistrationPrefill(workbookId, taskName, docId, classMeta) {
-    var target = openTask(workbookId, taskName);
-    var ss = target.ss;
-    var profile = RubricEngine.getActiveProfile(ss, target.task);
-    var grades = records(ss, 'ApprovedGrades').filter(function (r) { return text(r.TaskName).trim() === target.task; });
-    var user = WebAccess.requireTeacher();
-
-    var counts = { A: 0, B: 0, C: 0, D: 0, E: 0 };
-    var totalPct = 0;
-    for (var i = 0; i < grades.length; i++) {
-      var g = text(grades[i].Grade).toUpperCase();
-      if (counts[g] !== undefined) counts[g]++;
-      totalPct += toNumber(grades[i].Percent);
-    }
-    var avgPct = grades.length ? (totalPct / grades.length).toFixed(1) : '0';
-    var outcomesList = profile ? profile.criteria.map(function (c) { return c.outcome; }).filter(Boolean) : [];
-    var uniqueOutcomes = [];
-    for (var u = 0; u < outcomesList.length; u++) {
-      if (uniqueOutcomes.indexOf(outcomesList[u]) === -1) uniqueOutcomes.push(outcomesList[u]);
-    }
-
-    var proposed = {
-      unitName: target.task,
-      teacher: user,
-      dates: classMeta && classMeta.dates || new Date().toISOString().slice(0, 10),
-      syllabusOutcomes: uniqueOutcomes.join(', ') || 'DT5-1, DT5-2, DT5-3',
-      gradeDistribution: 'A: ' + counts.A + ', B: ' + counts.B + ', C: ' + counts.C + ', D: ' + counts.D + ', E: ' + counts.E + ' (Avg: ' + avgPct + '%)',
-      teacherVariations: classMeta && classMeta.teacherVariations || 'Practical prototyping with iterative testing; safety checkpoints completed.',
-      curriculumAdjustments: classMeta && classMeta.curriculumAdjustments || 'Visual scaffolding provided for folio documentation.',
-      studentFeedbackSummary: classMeta && classMeta.studentFeedbackSummary || 'Strong engagement with CAD/modelling; time management in folio completion identified for focus.'
-    };
-
-    return {
-      success: true,
-      taskName: target.task,
-      docId: docId || '',
-      proposed: proposed
-    };
+  /* Compatibility wrappers: the register now lives in EvaluationRegister.gs,
+     which pre-fills only real workbook facts and writes a real destination. */
+  function previewRegistrationPrefill(workbookId, taskName, docId) {
+    var res = EvaluationRegister.preview(workbookId, taskName, docId);
+    var c = res.data.context;
+    return { success: true, taskName: c.taskName, docId: docId || '', destination: res.data.destination,
+      proposed: { unitName: c.taskName, dates: c.dates, syllabusOutcomes: c.outcomes, gradeDistribution: c.gradeDistribution,
+        className: c.className, courseCode: c.courseCode, teacherVariations: '', curriculumAdjustments: '', studentFeedbackSummary: '' } };
   }
 
   function saveRegistrationPrefill(workbookId, taskName, docId, fieldValues, confirmed) {
-    if (!fieldValues) throw new Error('Field values required.');
-    var target = openTask(workbookId, taskName);
-    var ss = target.ss;
-    if (!confirmed) {
-      return { success: true, preview: true, fieldValues: fieldValues, message: 'Review field values before confirming update.' };
-    }
-    var user = WebAccess.requireTeacher();
-    var ts = now();
-    append(ss, 'AuditLog', {
-      AuditID: uid(), TaskName: target.task, Action: 'RegistrationPrefillSaved',
-      TargetID: docId || 'DirectExport', TargetURL: docId ? 'https://docs.google.com/document/d/' + docId : '',
-      ActorEmail: user, Timestamp: ts, Status: 'Updated',
-      DetailsJSON: JSON.stringify(fieldValues)
-    });
-    return {
-      success: true,
-      message: 'Registration & Evaluation document entry updated successfully by ' + user + '.',
-      exportMarkdown: '# Registration & Evaluation — ' + target.task + '\n\n' +
-        '- **Teacher:** ' + fieldValues.teacher + '\n' +
-        '- **Dates:** ' + fieldValues.dates + '\n' +
-        '- **Outcomes:** ' + fieldValues.syllabusOutcomes + '\n' +
-        '- **Grade Distribution:** ' + fieldValues.gradeDistribution + '\n' +
-        '- **Teacher Variations & Evaluation:** ' + fieldValues.teacherVariations + '\n' +
-        '- **Curriculum Adjustments:** ' + fieldValues.curriculumAdjustments + '\n' +
-        '- **Student Feedback Summary:** ' + fieldValues.studentFeedbackSummary + '\n'
-    };
+    var f = fieldValues || {};
+    if (!confirmed) return { success: true, preview: true, fieldValues: f, message: 'Review field values and the destination before committing.' };
+    return EvaluationRegister.commit(workbookId, taskName, {
+      teacherEvaluation: f.teacherEvaluation || f.teacherVariations || '',
+      teachingVariations: f.teachingVariations || (f.teacherEvaluation ? f.teacherVariations : '') || '',
+      adjustments: f.adjustments || f.curriculumAdjustments || '',
+      studentFeedbackSummary: f.studentFeedbackSummary || ''
+    }, docId, true);
   }
 
   function getAuditDashboard(workbookId, params) {
@@ -1046,10 +999,11 @@ var WebGrading = (function () {
       var t = tasks[i];
       var tGrades = grades.filter(function (r) { return text(r.TaskName).trim() === t; });
       var tAudit = auditLogs.filter(function (r) { return text(r.TaskName).trim() === t; });
-      var regSaved = tAudit.some(function (r) { return text(r.Action) === 'RegistrationPrefillSaved'; });
-      var highSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_HIGH'; });
-      var medSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_MED'; });
-      var lowSaved = tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_LOW'; });
+      var regSaved = records(ss, 'EvaluationRegister').some(function (r) { return text(r.TaskName).trim() === t && /Written|Recorded/.test(text(r.Status)); });
+      function sampleSaved(tier) { return tAudit.some(function (r) { return text(r.Action) === 'SampleSaved_' + tier && text(r.Status) === 'Saved'; }); }
+      var highSaved = sampleSaved('HIGH');
+      var medSaved = sampleSaved('MED');
+      var lowSaved = sampleSaved('LOW');
       var samplesCount = (highSaved ? 1 : 0) + (medSaved ? 1 : 0) + (lowSaved ? 1 : 0);
 
       list.push({
@@ -1114,24 +1068,33 @@ var WebGrading = (function () {
     return { success: true, taskName: target.task, drafts: drafts };
   }
 
+  /* Google Classroom has no API for messaging students, so nothing is sent
+     from here. Drafts are recorded honestly for the teacher to copy into
+     Classroom or school email. (REVIEW.md F02) */
   function sendClassroomMessages(workbookId, taskName, messages, confirmed) {
-    if (!Array.isArray(messages) || !messages.length) throw new Error('No messages to send.');
+    if (!Array.isArray(messages) || !messages.length) throw new Error('No messages to record.');
+    if (messages.length > 200) throw new Error('Record at most 200 message drafts at a time.');
     var target = openTask(workbookId, taskName);
     var ss = target.ss;
     if (!confirmed) {
-      return { success: true, preview: true, count: messages.length, messages: messages, message: 'Review messages before sending.' };
+      return { success: true, preview: true, count: messages.length, messages: messages,
+        message: 'Review the drafts. Nothing will be sent: Classroom has no messaging API.' };
     }
+    ensureSheet(ss, 'ClassroomMessages', MESSAGES);
     var user = WebAccess.requireTeacher();
+    var links = records(ss, 'ClassroomConfig').filter(function (r) { return text(r.TaskName) === target.task && yes(r.Active); });
+    var link = links[links.length - 1] || {};
     for (var i = 0; i < messages.length; i++) {
-      var m = messages[i];
+      var m = messages[i] || {};
       append(ss, 'ClassroomMessages', {
-        MessageID: uid(), CourseID: '', CourseWorkID: '',
-        StudentUserID: m.studentId || '', StudentName: m.studentName || '',
-        StudentEmail: m.studentEmail || '', Reason: m.reason || '',
-        MessageText: m.message || '', Status: 'Sent', SentAt: now(), SentBy: user
+        MessageID: uid(), CourseID: text(link.CourseID), CourseWorkID: text(link.CourseWorkID),
+        StudentUserID: text(m.studentId).slice(0, 200), StudentName: text(m.studentName).slice(0, 160),
+        StudentEmail: text(m.studentEmail).slice(0, 180), Reason: text(m.reason).slice(0, 300),
+        MessageText: text(m.message).slice(0, 4000), Status: 'Drafted — not sent', SentAt: '', SentBy: user
       });
     }
-    return { success: true, message: 'Successfully sent ' + messages.length + ' classroom notification messages.' };
+    return { success: true, sent: 0, recorded: messages.length,
+      message: 'Recorded ' + messages.length + ' message draft(s) in ClassroomMessages. Nothing was sent — copy them into Classroom or email.' };
   }
 
   function getClassTableData(workbookId, taskName, filter) {

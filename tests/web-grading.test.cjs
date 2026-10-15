@@ -22,9 +22,11 @@ function setup() {
     WebAccess:{requireTeacher:()=> 'dan@school.edu.au'},
     LessonGraderWeb:{open:(wb)=> {assert.equal(wb,ss.id);return ss;},taskNames:()=>['Rube Goldberg','Water Filter'],isSharedRubric:()=>true},
     DriveService:{isEligibleForAi:(mime)=>mime === 'application/pdf'},
-    DriveApp:{getFileById:()=>({makeCopy:()=>({getId:()=> 'backup-1'})})}
+    DriveApp:{getFileById:()=>({makeCopy:()=>({getId:()=> 'backup-1'})})},
+    MimeType:{GOOGLE_DOCS:'application/vnd.google-apps.document'},
+    Utilities:{getUuid:()=>`id-${id++}`,formatDate:(d)=>d.toISOString().slice(0,10)}
   };
-  const g=context(mocks).load('RubricEngine.gs','WebGrading.gs');
+  const g=context(mocks).load('AppConfig.gs','RubricEngine.gs','WebGrading.gs','EvaluationRegister.gs');
   return {g,ss};
 }
 function rowsOne() {return [
@@ -316,24 +318,50 @@ test('suggests HIGH, MED, LOW work samples and saves copies to Drive with previe
   const saved = W.saveWorkSamples(ss.id, 'Rube Goldberg', sugg.proposals, { highFolderId: 'H_DIR', medFolderId: 'M_DIR', lowFolderId: 'L_DIR' }, true);
   assert.equal(saved.success, true);
   assert.equal(saved.results.length, 3);
-  assert.equal(objectRows(ss.getSheetByName('AuditLog')).filter(r=>r.Action.startsWith('SampleSaved_')).length, 3);
+  assert.equal(objectRows(ss.getSheetByName('AuditLog')).filter(r=>r.Action.startsWith('SampleSaved_') && r.Status==='Saved').length, 3);
+
+  // Without destination folders nothing is copied, and the result says so (F04).
+  const none = W.saveWorkSamples(ss.id, 'Rube Goldberg', sugg.proposals, {}, true);
+  assert.equal(none.success, false);
+  assert.match(none.message, /Copied 0 of 3/);
+  g.DriveApp.getFileById = () => ({ makeCopy: () => { throw new Error('Permission denied'); } });
+  const failed = W.saveWorkSamples(ss.id, 'Rube Goldberg', sugg.proposals, { highFolderId: 'H', medFolderId: 'M', lowFolderId: 'L' }, true);
+  assert.equal(failed.success, false);
+  assert.ok(failed.results.every(r => !r.copied && /Copy failed/.test(r.message)));
 });
 
-test('previews and saves Registration & Evaluation prefill with safe export and audit log',()=>{
+test('register entry pre-fills only workbook facts and commits to the workbook sheet (F03)',()=>{
   const {g,ss}=setup();const W=g.WebGrading;W.prepare(ss,false);
   W.activateRubric(ss.id,'Rube Goldberg','Rube','',rowsOne(),{},true);
   const d1 = W.saveDraft(ss.id, 'Rube Goldberg', 'SUB-1', { C01:{checkboxes:{'C01-A-1':true}}, C02:{checkboxes:{'C02-A-1':true}} }, {}, '', 'Teacher');
   W.approve(ss.id, 'Rube Goldberg', 'SUB-1', d1.revision);
 
-  const preview = W.previewRegistrationPrefill(ss.id, 'Rube Goldberg', 'DOC-123', { dates: 'Term 1 2026' });
+  const preview = W.previewRegistrationPrefill(ss.id, 'Rube Goldberg', '');
   assert.equal(preview.success, true);
   assert.equal(preview.proposed.unitName, 'Rube Goldberg');
   assert.ok(preview.proposed.gradeDistribution.includes('A: 1'));
+  assert.equal(preview.proposed.teacherVariations, '', 'no invented evaluation text');
+  assert.equal(preview.proposed.courseCode, '7TECHI');
+  assert.equal(preview.destination.type, 'sheet');
 
-  const saved = W.saveRegistrationPrefill(ss.id, 'Rube Goldberg', 'DOC-123', preview.proposed, true);
+  assert.throws(()=>W.saveRegistrationPrefill(ss.id, 'Rube Goldberg', '', {}, true), /teacher evaluation/);
+  const saved = W.saveRegistrationPrefill(ss.id, 'Rube Goldberg', '', { teacherEvaluation: 'Students iterated well.', studentFeedbackSummary: 'Time management' }, true);
   assert.equal(saved.success, true);
-  assert.ok(saved.exportMarkdown.includes('# Registration & Evaluation — Rube Goldberg'));
-  assert.equal(objectRows(ss.getSheetByName('AuditLog')).some(r=>r.Action==='RegistrationPrefillSaved'), true);
+  const rows = objectRows(ss.getSheetByName('EvaluationRegister'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].TeacherEvaluation, 'Students iterated well.');
+  assert.equal(rows[0].Status, 'Recorded in workbook');
+  assert.equal(W.getAuditDashboard(ss.id).tasks.find(t=>t.taskName==='Rube Goldberg').registrationDocStatus, 'Complete');
+});
+
+test('register Doc write failure is reported, never claimed as success',()=>{
+  const {g,ss}=setup();g.WebGrading.prepare(ss,false);
+  g.DriveApp={getFileById:()=>({isTrashed:()=>false,getMimeType:()=>'application/vnd.google-apps.document',getName:()=>'Register 2026',getUrl:()=>'https://docs.google.com/document/d/x'})};
+  g.DocumentApp={openById:()=>{throw new Error('No edit access');},ParagraphHeading:{HEADING2:'H2'}};
+  const res=g.EvaluationRegister.commit(ss.id,'Rube Goldberg',{teacherEvaluation:'Reflection'},'DOC'+'1'.repeat(30),true);
+  assert.equal(res.success,false);
+  assert.match(res.message,/NOT updated/);
+  assert.equal(objectRows(ss.getSheetByName('EvaluationRegister'))[0].Status,'Doc write failed — recorded in workbook only');
 });
 
 test('flags incomplete submissions, drafts and sends Classroom messages with confirmation',()=>{
@@ -350,10 +378,15 @@ test('flags incomplete submissions, drafts and sends Classroom messages with con
   const prev = W.sendClassroomMessages(ss.id, 'Rube Goldberg', drafts.drafts, false);
   assert.equal(prev.preview, true);
 
-  // Send with confirmation
+  // Confirming records drafts honestly: nothing is sent (F02).
   const sent = W.sendClassroomMessages(ss.id, 'Rube Goldberg', drafts.drafts, true);
   assert.equal(sent.success, true);
-  assert.equal(objectRows(ss.getSheetByName('ClassroomMessages')).length, 1);
+  assert.equal(sent.sent, 0);
+  assert.match(sent.message, /Nothing was sent/);
+  assert.doesNotMatch(sent.message, /Successfully sent/);
+  const rows = objectRows(ss.getSheetByName('ClassroomMessages'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Status, 'Drafted — not sent');
 });
 
 test('retrieves class table matrix and syncs persistent ClassTracking sheet idempotently',()=>{
