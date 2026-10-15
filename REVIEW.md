@@ -185,52 +185,52 @@ Status is updated in later phases.
 
 | ID | Area | Severity | File:Line | Issue | Proposed fix | Status |
 |---|---|---|---|---|---|---|
-| F01 | Security / credentials | Critical | `WebApp.html:1291`, `WebAccess.gs:160,178,145` | "Save All Settings" sends `geminiApiKey` inside the settings patch; `saveSettings` merges arbitrary keys into `LESSON_GRADER_SETTINGS` and `getSettings` returns them to the browser — the Gemini key can be stored in plain settings JSON and echoed back. | Whitelist settings keys; strip any `*key*`/secret fields; never return secrets; separate key endpoints only. Migration: scrub existing property on next save. | Open |
-| F02 | Honesty / persistence | Critical | `WebGrading.gs:1117-1135` | Classroom messages reported as "sent" but only logged. | Record as drafts with status `Drafted — not sent`; message states nothing was sent and why (no Classroom messaging API). | Open |
-| F03 | Honesty / persistence | Critical | `WebGrading.gs:1010-1037`, `WebApp.html:1198-1214` | Register "updated successfully" but no register is written; hardcoded field values. | Real commit to a Google Doc (validated ID) or an `EvaluationRegister` sheet; pre-fill from real task data; preview + confirm. | Open |
-| F04 | Honesty / persistence | High | `WebGrading.gs:942-960`, `WebApp.html:1220` | Work samples report success when no copy was made. | Fail per tier unless a copy succeeded; require destination folders; return partial result honestly. | Open |
-| F05 | Mobile | High | `WebAppIntegration.gs:1378-1380` | HtmlService ignores `<meta name="viewport">` in the file; without `addMetaTag` phones render the desktop width. | `.addMetaTag('viewport','width=device-width, initial-scale=1')`. | Open |
-| F06 | Workflow (UI) | Critical | `WebApp.html` (ids `run-ai`, `lock-grade`, `new-reassessment`, `download-report`, `task-import`, `task-add-rubric`, `activate-rubric`, `editor-add-criterion`, `upload-rubric`, `create-form`, `btn-send-classroom-messages`, `retry-auth`, `refresh-workbooks`, `student-search`) | Primary buttons have no event handler; the create form submits and reloads the page; `navigate('classroom')` calls undefined `loadClassroom` (`WebApp.html:699`). A fresh workbook cannot get a rubric or Classroom submissions through the UI. | Rewrite the client around a central API wrapper and wire every control to a real server action. | Open |
-| F07 | Approval correctness | Critical | `WebApp.html:1048-1064`, `WebGrading.gs:341-410` | Approve uses the **last saved** draft; unsaved on-screen edits are silently ignored and the UI then shows "Approved". | Client: block approve while dirty (save first, then approve with the new revision). Server already checks revision. | Open |
-| F08 | Legacy data integrity | Critical | `Code.gs:578-584` | `Utils.buildRichTextFromMarkdown` does not exist. Legacy approval writes letters to `9DAT1 Marking` then throws before marking rows Approved → partially applied approval. | Implement the helper (plain rich text) and write the markbook after status validation. | Open |
-| F09 | Grading rules | High | `RubricEngine.gs:37`, `WebAccess.gs:100`, `Code.gs:22,158` | Band weights A 1.0 / B 0.875 / C 0.70 / D 0.575 / E 0.25 conflict with confirmed reference points A 100% / C 50% / E 0% (SC19). | Do not silently change. Make the active rule set explicit, report conflict in health check, provide a target rule set that cannot be activated until B/D are confirmed. See §4. | Open |
-| F10 | Grading rules | Medium | `RubricEngine.gs:98-104,484-486` | Letter boundaries compare raw floating percentages; e.g. 17/20 can be computed as 84.999999… and fall to B. | Normalise percentages to 9 d.p. before comparison (removes float noise, not a policy change); test every boundary. | Open |
-| F11 | Grading UI drift | High | `WebApp.html:988-1018` | Client live score re-implements maths with hardcoded boundaries 85/75/65/50 and a default weight of 1.0 when a weight is missing; diverges from server for custom `Setup` scales. | Server returns the profile's scale; client mirrors `RubricEngine` exactly (shared tested function) and server remains authoritative on save. | Open |
-| F12 | Approval rules | High | `WebGrading.gs:369-371` | A criterion with no ticks blocks approval forever, so genuine "no creditable evidence" cannot be approved without ticking something false. | Explicit per-criterion "No creditable evidence (0 marks)" teacher confirmation that resolves the blocking flag; recorded in history. | Open |
-| F13 | Flags | High | `WebGrading.gs` | No distinction between blocking flags and advisory suggestions; AI evidence quality, unreadable files and stale feedback are not flagged. | Pure `Flags` module: blocking (no selection, unresolved AI insufficient-evidence, unreadable evidence not acknowledged) vs advisory (capped bands, teacher note not in feedback, feedback older than grade). | Open |
-| F14 | Publishing | High | — | Web app has no Classroom publishing at all (SC39/40). | Separate `Publishing` module: preview selected approved students → typed confirmation → `studentSubmissions.patch` per student with isolation, log + history; never automatic. | Open |
-| F15 | Locking | High | `WebGrading.gs:412-432` | No unlock workflow; locked work can only be reassessed by version (reassess allows Locked). | Locked blocks reassess/publish changes; explicit unlock with reason, restricted to `LESSON_GRADER_UNLOCK_EMAILS`, recorded in history. | Open |
-| F16 | Sync | High | `Code.gs:1544-1635,1965` | The only automatic import uses `getActiveSpreadsheet()`; in the standalone web project that is `null`, so no web workbook is ever auto-synced (SC08). | Library-wide hourly sync over every workbook link: import due-dated assignments after due date, keep syncing hourly, idempotent, never touches grades. Trigger install/remove from Settings. | Open |
-| F17 | Sync | Medium | `WebGrading.gs:697-698` | Change detection only compares attachment IDs; an edited Google Doc (same file ID) shows as "unchanged", and Classroom state/late flags are never refreshed. | Refresh non-grading metadata; if evidence changed after approval, flag `EvidenceChangedAt` + history without touching the approved result. | Open |
-| F18 | Sync | Medium | `WebGrading.gs:750`, `WebGrading.gs:332-336` | Import and drafts call `WebAccess.requireTeacher()` for the actor, which fails inside a time trigger. | Pass an explicit actor; trigger context resolves the trigger owner against the allowlist. | Open |
-| F19 | AI reliability | High | `WebGrading.gs:756-791` | Bulk AI runs synchronously in one request: 6-minute limit, no resume, no queue, no outage choice (SC48/49). | `AiQueue` sheet with dedupe key, time-budgeted processor, retry/attempt counts, stale-revision skip, readiness counts; manual continue always available. | Open |
-| F20 | AI evidence | High | `WebGrading.gs:574-595` | AI ticks without evidence notes are accepted; criteria with no supported evidence are not flagged (SC22). | Accept a tick only with an evidence note naming a supplied file; otherwise record as unsupported and flag. | Open |
-| F21 | AI evidence | Medium | `WebGrading.gs:535-548` | Skipped/unreadable files are returned to the client but not persisted or shown in the Studio (SC23). | Persist `AIReviewStatus`/`Limitations` per file; show readable/unreadable badges; unreadable files create an acknowledgement flag. | Open |
-| F22 | Privacy | High | `WebGrading.gs:550-557`, `Code.gs:2185` | No de-identification policy; no JEV path; legacy feedback prompt sends the full student name. | `Deidentify` module (names, emails, IDs, phone numbers) used for JEV and refinement examples; document limits (binary files cannot be de-identified). | Open |
-| F23 | Evidence history | Medium | — | Evidence text used for assessment is never stored (SC44). | `EvidenceVersions` append-only sheet keyed by content hash. | Open |
-| F24 | Async/UI | High | `WebApp.html:875-883,759-786` | No stale-response guard: opening student B while A is loading can render A's data under B's context; saves then target A's id with B's on-screen ticks. | Sequence token per context; ignore responses for a superseded context; every write carries workbook/task/submission captured at render. | Open |
-| F25 | Performance | Medium | `WebAppIntegration.gs:129-163` | Every call walks the whole Drive library to validate membership. | Per-user cache of verified library IDs (10 min), invalidated on create; still validates MIME/trash on each open. | Open |
-| F26 | Classroom | Medium | `Code.gs:1433` | Teacher courses not paginated (50 cap). | Paginate. | Open |
-| F27 | Data integrity | Medium | `WebGrading.gs:1179-1201` | Class tracking hardcodes `7TECHI`, `Stage 5`, `2026`, `MaxMarks: 100`; writes the submission ID into `StudentUserID`. | Derive from workbook/task data; store the real student ID; keep idempotent key. | Open |
-| F28 | XSS | Medium | `AssessmentStudio.html:80,172-187` | Legacy studio injects teacher notes, explanations and error text into `innerHTML` unescaped (`</textarea>` breakout). | Escape all interpolated values. | Open |
-| F29 | XSS | Low | `WebApp.html:907` | Evidence `href` uses HTML escaping only; a `javascript:` link would execute. | Allow only `https:` Drive/Docs links. | Open |
-| F30 | Dictation | High | `WebApp.html:1066-1099`, `VoiceDictation.html:135-140` | Web dictation is single-shot, has no permission/no-speech error messages, does not mark the field dirty for prefill fields, and is absent from feedback fields; legacy dictation posts to `window.opener`, which is null for GAS dialogs, so transcripts are lost. | Shared dictation controller: continuous with interim preview, appends to any textarea, editable, explicit states (listening/denied/unsupported/no speech), never saves or approves. Legacy: relay through the parent via `google.script.run` is out of scope — document as legacy limitation. | Open |
-| F31 | Settings integrity | Medium | `WebAccess.gs:153-180`, `WebApp.html:1266-1297` | Settings accept any shape; thresholds saved there do not change grading. | Validate known keys; grading policy lives only in the workbook `Setup` sheet and is shown read-only with an explicit "Save grade scale to this workbook" action. | Open |
-| F32 | Feedback | High | — | No way to rebuild feedback from revised selections/observations; no stale-feedback detection; first-name usage uncontrolled (SC31–34). | Deterministic, grounded feedback builder from ticked observables, next-band targets and teacher observations; first name once; stale detection by selection hash. | Open |
-| F33 | Config / scopes | Medium | `appsscript.json` | No explicit OAuth scopes; adding DocumentApp/external requests changes consent silently. | Declare explicit minimal scopes. | Open |
-| F34 | Launcher | Medium | `WebAppIntegration.gs:1378`, `docs/LAUNCHER.md` | Launcher embeds the app in an iframe, but HtmlService defaults to `X-Frame-Options: SAMEORIGIN`; embedding cannot work as documented. | Opt-in `LESSON_GRADER_ALLOW_EMBED=true` → `ALLOWALL` (clickjacking trade-off documented); default stays safe; launcher already offers "open in tab". | Open |
-| F35 | Rubric persistence | High | `RubricEngine.gs:770-801` | Rubric profiles are JSON only; workbook edits cannot flow back into the app (SC14). | Mirror activated rows into a human-editable `RubricRows` sheet; detect drift; "Reload from workbook" previews and activates a new version (existing assessments stay pinned). | Open |
-| F36 | Teacher level override | High (policy) | `RubricEngine.gs:438-499` | No criterion-level override exists (only the distinct full-marks override). The rule for how a teacher-selected level interacts with observables is not documented (SC18/SC25). | Do not invent. Keep observables as the only scoring input; expose the level read-only; record the open decision; health check reports it. | Open |
-| F37 | Workbook setup | Medium | `WebAppIntegration.gs:437-539` | No "create from Classroom assignment" flow; category must be preconfigured via Script Property or be the only folder. | One flow: course → assignment → workbook name defaults → create + task tab + link + enable grading. Category can be chosen. | Open |
-| F38 | Resume | Medium | `WebApp.html` | No resume of last workbook/task/student (SC01). | Remember last context per browser (convenience only) and re-validate against server on load. | Open |
-| F39 | Landing page | Medium | `WebAppIntegration.gs:235-280` | Workbook list returns name only; no class/task/updated info (SC02). | Parse name into course/year/task, add last-updated and task tabs. | Open |
-| F40 | Error handling | Medium | `WebGrading.gs` (many) | Server throws raw errors; `google.script.run` failure messages reach the toast, but save status text can still read "Draft saved" from an earlier save. | Explicit save-state machine (`Unsaved` / `Saving…` / `Saved <time>` / `Save failed — not saved`). | Open |
-| F41 | Dead code | Low | `WebAppIntegration.gs:675-1218` | `getTaskAssessmentOverview_` and `getSubmissionAssessmentDetail_` (~540 lines) are unused by any UI. | Keep the public `apiWeb*` names (compatibility) but mark deprecated; remove later. | Open |
-| F42 | Invented content | Medium | `RubricEngine.gs:1106-1147`, `WebApp.html:1326-1334` | "Generate Formative Rubric" fabricates generic criteria and outcome codes; UI discards the result. | Remove the button from the UI; keep the server function for compatibility, labelled as a template only. | Open |
-| F43 | Accessibility | Medium | `WebApp.html` | Body text 12–13px, touch targets 32–38px, icon-only mobile nav labels at 10px, no `aria-live` save status, observables are tiny checkboxes. | Mobile-first rewrite: 16px body, ≥44px targets, labelled controls, focus management, live regions. | Open |
-| F44 | Report | Low | `WebGrading.gs:611-623` | Report renders the pinned profile but does not include deductions or approval snapshot values. | Render from the `ApprovedGrades` snapshot. | Open |
-| F45 | Tests | Medium | `tests/` | Tests encode some fake behaviour as correct (messages "sent", prefill "updated"). No tests for boundaries, flags, publishing, unlock, sync triggers, queue, de-identification or UI failure states. | Replace with honest-behaviour tests and add the missing suites. | Open |
-| F46 | Date/time | Medium | `WebAppIntegration.gs:590-596`, `Code.gs:1526` | Classroom due time is UTC; both paths treat a missing time as 23:59 **UTC** (≈ 09:59/10:59 next day Sydney) rather than end of day Sydney. | Missing due time → 23:59 Australia/Sydney; store ISO UTC; display in Sydney time. | Open |
+| F01 | Security / credentials | Critical | `WebApp.html:1291`, `WebAccess.gs:160,178,145` | "Save All Settings" sends `geminiApiKey` inside the settings patch; `saveSettings` merges arbitrary keys into `LESSON_GRADER_SETTINGS` and `getSettings` returns them to the browser — the Gemini key can be stored in plain settings JSON and echoed back. | Whitelist settings keys; strip any `*key*`/secret fields; never return secrets; separate key endpoints only. Migration: scrub existing property on next save. | Fixed |
+| F02 | Honesty / persistence | Critical | `WebGrading.gs:1117-1135` | Classroom messages reported as "sent" but only logged. | Record as drafts with status `Drafted — not sent`; message states nothing was sent and why (no Classroom messaging API). | Fixed |
+| F03 | Honesty / persistence | Critical | `WebGrading.gs:1010-1037`, `WebApp.html:1198-1214` | Register "updated successfully" but no register is written; hardcoded field values. | Real commit to a Google Doc (validated ID) or an `EvaluationRegister` sheet; pre-fill from real task data; preview + confirm. | Fixed |
+| F04 | Honesty / persistence | High | `WebGrading.gs:942-960`, `WebApp.html:1220` | Work samples report success when no copy was made. | Fail per tier unless a copy succeeded; require destination folders; return partial result honestly. | Fixed |
+| F05 | Mobile | High | `WebAppIntegration.gs:1378-1380` | HtmlService ignores `<meta name="viewport">` in the file; without `addMetaTag` phones render the desktop width. | `.addMetaTag('viewport','width=device-width, initial-scale=1')`. | Fixed |
+| F06 | Workflow (UI) | Critical | `WebApp.html` (ids `run-ai`, `lock-grade`, `new-reassessment`, `download-report`, `task-import`, `task-add-rubric`, `activate-rubric`, `editor-add-criterion`, `upload-rubric`, `create-form`, `btn-send-classroom-messages`, `retry-auth`, `refresh-workbooks`, `student-search`) | Primary buttons have no event handler; the create form submits and reloads the page; `navigate('classroom')` calls undefined `loadClassroom` (`WebApp.html:699`). A fresh workbook cannot get a rubric or Classroom submissions through the UI. | Rewrite the client around a central API wrapper and wire every control to a real server action. | Fixed |
+| F07 | Approval correctness | Critical | `WebApp.html:1048-1064`, `WebGrading.gs:341-410` | Approve uses the **last saved** draft; unsaved on-screen edits are silently ignored and the UI then shows "Approved". | Client: block approve while dirty (save first, then approve with the new revision). Server already checks revision. | Fixed |
+| F08 | Legacy data integrity | Critical | `Code.gs:578-584` | `Utils.buildRichTextFromMarkdown` does not exist. Legacy approval writes letters to `9DAT1 Marking` then throws before marking rows Approved → partially applied approval. | Implement the helper (plain rich text) and write the markbook after status validation. | Fixed |
+| F09 | Grading rules | High | `RubricEngine.gs:37`, `WebAccess.gs:100`, `Code.gs:22,158` | Band weights A 1.0 / B 0.875 / C 0.70 / D 0.575 / E 0.25 conflict with confirmed reference points A 100% / C 50% / E 0% (SC19). | Do not silently change. Make the active rule set explicit, report conflict in health check, provide a target rule set that cannot be activated until B/D are confirmed. See §4. | Mitigated — blocked on policy |
+| F10 | Grading rules | Medium | `RubricEngine.gs:98-104,484-486` | Letter boundaries compare raw floating percentages; e.g. 17/20 can be computed as 84.999999… and fall to B. | Normalise percentages to 9 d.p. before comparison (removes float noise, not a policy change); test every boundary. | Fixed |
+| F11 | Grading UI drift | High | `WebApp.html:988-1018` | Client live score re-implements maths with hardcoded boundaries 85/75/65/50 and a default weight of 1.0 when a weight is missing; diverges from server for custom `Setup` scales. | Server returns the profile's scale; client mirrors `RubricEngine` exactly (shared tested function) and server remains authoritative on save. | Fixed |
+| F12 | Approval rules | High | `WebGrading.gs:369-371` | A criterion with no ticks blocks approval forever, so genuine "no creditable evidence" cannot be approved without ticking something false. | Explicit per-criterion "No creditable evidence (0 marks)" teacher confirmation that resolves the blocking flag; recorded in history. | Fixed |
+| F13 | Flags | High | `WebGrading.gs` | No distinction between blocking flags and advisory suggestions; AI evidence quality, unreadable files and stale feedback are not flagged. | Pure `Flags` module: blocking (no selection, unresolved AI insufficient-evidence, unreadable evidence not acknowledged) vs advisory (capped bands, teacher note not in feedback, feedback older than grade). | Fixed |
+| F14 | Publishing | High | — | Web app has no Classroom publishing at all (SC39/40). | Separate `Publishing` module: preview selected approved students → typed confirmation → `studentSubmissions.patch` per student with isolation, log + history; never automatic. | Fixed |
+| F15 | Locking | High | `WebGrading.gs:412-432` | No unlock workflow; locked work can only be reassessed by version (reassess allows Locked). | Locked blocks reassess/publish changes; explicit unlock with reason, restricted to `LESSON_GRADER_UNLOCK_EMAILS`, recorded in history. | Fixed |
+| F16 | Sync | High | `Code.gs:1544-1635,1965` | The only automatic import uses `getActiveSpreadsheet()`; in the standalone web project that is `null`, so no web workbook is ever auto-synced (SC08). | Library-wide hourly sync over every workbook link: import due-dated assignments after due date, keep syncing hourly, idempotent, never touches grades. Trigger install/remove from Settings. | Fixed |
+| F17 | Sync | Medium | `WebGrading.gs:697-698` | Change detection only compares attachment IDs; an edited Google Doc (same file ID) shows as "unchanged", and Classroom state/late flags are never refreshed. | Refresh non-grading metadata; if evidence changed after approval, flag `EvidenceChangedAt` + history without touching the approved result. | Fixed |
+| F18 | Sync | Medium | `WebGrading.gs:750`, `WebGrading.gs:332-336` | Import and drafts call `WebAccess.requireTeacher()` for the actor, which fails inside a time trigger. | Pass an explicit actor; trigger context resolves the trigger owner against the allowlist. | Fixed |
+| F19 | AI reliability | High | `WebGrading.gs:756-791` | Bulk AI runs synchronously in one request: 6-minute limit, no resume, no queue, no outage choice (SC48/49). | `AiQueue` sheet with dedupe key, time-budgeted processor, retry/attempt counts, stale-revision skip, readiness counts; manual continue always available. | Fixed |
+| F20 | AI evidence | High | `WebGrading.gs:574-595` | AI ticks without evidence notes are accepted; criteria with no supported evidence are not flagged (SC22). | Accept a tick only with an evidence note naming a supplied file; otherwise record as unsupported and flag. | Fixed |
+| F21 | AI evidence | Medium | `WebGrading.gs:535-548` | Skipped/unreadable files are returned to the client but not persisted or shown in the Studio (SC23). | Persist `AIReviewStatus`/`Limitations` per file; show readable/unreadable badges; unreadable files create an acknowledgement flag. | Fixed |
+| F22 | Privacy | High | `WebGrading.gs:550-557`, `Code.gs:2185` | No de-identification policy; no JEV path; legacy feedback prompt sends the full student name. | `Deidentify` module (names, emails, IDs, phone numbers) used for JEV and refinement examples; document limits (binary files cannot be de-identified). | Fixed |
+| F23 | Evidence history | Medium | — | Evidence text used for assessment is never stored (SC44). | `EvidenceVersions` append-only sheet keyed by content hash. | Fixed |
+| F24 | Async/UI | High | `WebApp.html:875-883,759-786` | No stale-response guard: opening student B while A is loading can render A's data under B's context; saves then target A's id with B's on-screen ticks. | Sequence token per context; ignore responses for a superseded context; every write carries workbook/task/submission captured at render. | Fixed |
+| F25 | Performance | Medium | `WebAppIntegration.gs:129-163` | Every call walks the whole Drive library to validate membership. | Per-user cache of verified library IDs (10 min), invalidated on create; still validates MIME/trash on each open. | Fixed |
+| F26 | Classroom | Medium | `Code.gs:1433` | Teacher courses not paginated (50 cap). | Paginate. | Fixed |
+| F27 | Data integrity | Medium | `WebGrading.gs:1179-1201` | Class tracking hardcodes `7TECHI`, `Stage 5`, `2026`, `MaxMarks: 100`; writes the submission ID into `StudentUserID`. | Derive from workbook/task data; store the real student ID; keep idempotent key. | Fixed |
+| F28 | XSS | Medium | `AssessmentStudio.html:80,172-187` | Legacy studio injects teacher notes, explanations and error text into `innerHTML` unescaped (`</textarea>` breakout). | Escape all interpolated values. | Fixed |
+| F29 | XSS | Low | `WebApp.html:907` | Evidence `href` uses HTML escaping only; a `javascript:` link would execute. | Allow only `https:` Drive/Docs links. | Fixed |
+| F30 | Dictation | High | `WebApp.html:1066-1099`, `VoiceDictation.html:135-140` | Web dictation is single-shot, has no permission/no-speech error messages, does not mark the field dirty for prefill fields, and is absent from feedback fields; legacy dictation posts to `window.opener`, which is null for GAS dialogs, so transcripts are lost. | Shared dictation controller: continuous with interim preview, appends to any textarea, editable, explicit states (listening/denied/unsupported/no speech), never saves or approves. Legacy: relay through the parent via `google.script.run` is out of scope — document as legacy limitation. | Fixed (web); legacy dialog deferred |
+| F31 | Settings integrity | Medium | `WebAccess.gs:153-180`, `WebApp.html:1266-1297` | Settings accept any shape; thresholds saved there do not change grading. | Validate known keys; grading policy lives only in the workbook `Setup` sheet and is shown read-only with an explicit "Save grade scale to this workbook" action. | Fixed |
+| F32 | Feedback | High | — | No way to rebuild feedback from revised selections/observations; no stale-feedback detection; first-name usage uncontrolled (SC31–34). | Deterministic, grounded feedback builder from ticked observables, next-band targets and teacher observations; first name once; stale detection by selection hash. | Fixed |
+| F33 | Config / scopes | Medium | `appsscript.json` | No explicit OAuth scopes; adding DocumentApp/external requests changes consent silently. | Declare explicit minimal scopes. | Fixed |
+| F34 | Launcher | Medium | `WebAppIntegration.gs:1378`, `docs/LAUNCHER.md` | Launcher embeds the app in an iframe, but HtmlService defaults to `X-Frame-Options: SAMEORIGIN`; embedding cannot work as documented. | Opt-in `LESSON_GRADER_ALLOW_EMBED=true` → `ALLOWALL` (clickjacking trade-off documented); default stays safe; launcher already offers "open in tab". | Fixed |
+| F35 | Rubric persistence | High | `RubricEngine.gs:770-801` | Rubric profiles are JSON only; workbook edits cannot flow back into the app (SC14). | Mirror activated rows into a human-editable `RubricRows` sheet; detect drift; "Reload from workbook" previews and activates a new version (existing assessments stay pinned). | Fixed |
+| F36 | Teacher level override | High (policy) | `RubricEngine.gs:438-499` | No criterion-level override exists (only the distinct full-marks override). The rule for how a teacher-selected level interacts with observables is not documented (SC18/SC25). | Do not invent. Keep observables as the only scoring input; expose the level read-only; record the open decision; health check reports it. | Blocked — policy decision |
+| F37 | Workbook setup | Medium | `WebAppIntegration.gs:437-539` | No "create from Classroom assignment" flow; category must be preconfigured via Script Property or be the only folder. | One flow: course → assignment → workbook name defaults → create + task tab + link + enable grading. Category can be chosen. | Fixed |
+| F38 | Resume | Medium | `WebApp.html` | No resume of last workbook/task/student (SC01). | Remember last context per browser (convenience only) and re-validate against server on load. | Fixed |
+| F39 | Landing page | Medium | `WebAppIntegration.gs:235-280` | Workbook list returns name only; no class/task/updated info (SC02). | Parse name into course/year/task, add last-updated and task tabs. | Fixed |
+| F40 | Error handling | Medium | `WebGrading.gs` (many) | Server throws raw errors; `google.script.run` failure messages reach the toast, but save status text can still read "Draft saved" from an earlier save. | Explicit save-state machine (`Unsaved` / `Saving…` / `Saved <time>` / `Save failed — not saved`). | Fixed |
+| F41 | Dead code | Low | `WebAppIntegration.gs:675-1218` | `getTaskAssessmentOverview_` and `getSubmissionAssessmentDetail_` (~540 lines) are unused by any UI. | Keep the public `apiWeb*` names (compatibility) but mark deprecated; remove later. | Deferred |
+| F42 | Invented content | Medium | `RubricEngine.gs:1106-1147`, `WebApp.html:1326-1334` | "Generate Formative Rubric" fabricates generic criteria and outcome codes; UI discards the result. | Remove the button from the UI; keep the server function for compatibility, labelled as a template only. | Fixed |
+| F43 | Accessibility | Medium | `WebApp.html` | Body text 12–13px, touch targets 32–38px, icon-only mobile nav labels at 10px, no `aria-live` save status, observables are tiny checkboxes. | Mobile-first rewrite: 16px body, ≥44px targets, labelled controls, focus management, live regions. | Fixed |
+| F44 | Report | Low | `WebGrading.gs:611-623` | Report renders the pinned profile but does not include deductions or approval snapshot values. | Render from the `ApprovedGrades` snapshot. | Deferred |
+| F45 | Tests | Medium | `tests/` | Tests encode some fake behaviour as correct (messages "sent", prefill "updated"). No tests for boundaries, flags, publishing, unlock, sync triggers, queue, de-identification or UI failure states. | Replace with honest-behaviour tests and add the missing suites. | Fixed |
+| F46 | Date/time | Medium | `WebAppIntegration.gs:590-596`, `Code.gs:1526` | Classroom due time is UTC; both paths treat a missing time as 23:59 **UTC** (≈ 09:59/10:59 next day Sydney) rather than end of day Sydney. | Missing due time → 23:59 Australia/Sydney; store ISO UTC; display in Sydney time. | Fixed |
 
 ---
 
@@ -286,4 +286,103 @@ active rubric. In the browser a teacher can: open workbook → open task → add
 
 ## 6. Phase 2+ work log
 
-*(appended as work proceeds)*
+| Commit | Group | Findings / criteria |
+|---|---|---|
+| `51c3afd` | fix: secrets and false success | F01–F05, F08, F28, F34 |
+| `c95948f` | fix: float-safe boundaries, SC19 reporting, reference rubric | F09 (mitigated), F10, SC15/16/19/20 |
+| `19aed66` | feat: flags, unlock, comparison, AI layer, queue, prompts, refinement | F12, F13, F15, F19–F23, SC17, SC22–23, SC26, SC38, SC41–49 |
+| `4ed4fef` | feat: hourly library sync, safe import | F16–F18, F26, F27, F39, F46, SC07–SC12 |
+| `78a1980` | feat: publishing, feedback builder, rubric round-trip, health check, scopes | F14, F25, F32, F33, F35, F37, SC04, SC13/14, SC31–35, SC39/40 |
+| `e964fca` | ui: mobile-first client rebuild | F06, F07, F11, F24, F29, F30, F38, F40, F42, F43, SC01/02/05/06/24/27/29/30/36/37/51 |
+
+### 6.1 Behaviour changes (documented, with reasons)
+
+1. **Sync no longer creates a new version for un-approved work** when attachments change (previously it did, leaving
+   the teacher's draft on a non-current row). Drafts are now updated in place, kept, and flagged `EVIDENCE_CHANGED`.
+   **Approved/locked work is never superseded by sync**: new evidence is held in `PendingEvidenceJSON` and used only
+   when the teacher deliberately presses Reassess (SC12, SC26).
+2. **Locked now means final**: reassessment of a locked version requires an authorised unlock first (SC41).
+3. **Approval requires resolved blocking flags** (previously only "at least one tick"); a criterion can be approved at
+   0 marks with an explicit "No creditable evidence" confirmation (F12, SC38).
+4. **AI ticks need a cited file** or they are discarded and flagged (SC22). AI never overwrites saved teacher ticks.
+5. **Settings no longer accept grade thresholds/weights** (they never affected grading); grading policy lives in each
+   workbook's `Setup` sheet and is pinned into each rubric version at activation.
+6. **Classroom message "send" records drafts only** and says so; register and sample actions report real outcomes.
+7. Missing Classroom due time is 23:59 **Sydney**, not 23:59 UTC.
+
+### 6.2 Architecture
+
+Before: one 3,100-line legacy file, a 1,350-line web service mixing state, AI, Classroom import and audit
+prototypes, and a single 1,350-line HTML file with styles, markup and script.
+
+After (one responsibility per file; all Apps Script globals, load-order independent — enforced by `npm run check`):
+
+| Concern | File(s) |
+|---|---|
+| Configuration, property names, settings validation | `AppConfig.gs` |
+| Access control, credentials, provider config | `WebAccess.gs` |
+| Drive library, workbook validation/creation, Classroom link, `doGet`, launcher probe | `WebAppIntegration.gs` |
+| Data access helpers + assessment state/versioning (draft, approve, lock, unlock, reassess, compare, import) | `WebGrading.gs` |
+| Pure rubric + deterministic grading | `RubricEngine.gs` |
+| Pure approval flags | `AssessmentFlags.gs` |
+| AI providers, validation, drafting | `AiGateway.gs`, `PromptRegistry.gs`, `AiQueue.gs` |
+| Evidence reading + Markdown history | `EvidenceService.gs` |
+| De-identification + refinement examples | `Deidentify.gs`, `Refinement.gs` |
+| Feedback building / output format | `FeedbackBuilder.gs` |
+| Classroom publishing | `Publishing.gs` |
+| Automatic sync + triggers | `SyncService.gs` |
+| Evaluation / register | `EvaluationRegister.gs` |
+| Self-test | `HealthCheck.gs` |
+| UI | `WebApp.html` (shell) + `WebAppStyles.html` + `WebAppClient.html` (Api wrapper, router, views) |
+| Legacy Jewellery Sheets Studio (kept, shared helpers) | `Code.gs` + legacy dialogs |
+
+Every externally called `apiWeb*`/`api*` name that existed before still exists with a compatible signature
+(new optional trailing parameters only). New endpoints are listed in README.md.
+
+### 6.3 Migration path (no data rewrite)
+
+- Core sheets/columns are unchanged. New **columns** (`Submissions`: EvidenceChangedAt, PendingEvidenceJSON,
+  UnlockedAt/By/Reason; `CriterionAssessments`: TeacherReviewJSON, AIProposedChecksJSON; `SubmissionFiles`:
+  EvidenceStatusUpdatedAt; `ClassroomConfig`: LastSyncedAt, LastSyncResult) are appended on first write.
+- New **sheets** are created when first needed: `RubricRows`, `AiQueue`, `EvidenceVersions`, `PublishLog`,
+  `PromptTests`, `RefinementExamples`, `EvaluationRegister`.
+- Existing drafts with feedback text will show `FEEDBACK_NOT_REVIEWED` until the teacher confirms or rebuilds the
+  feedback once. Existing approvals and snapshots are untouched.
+- Existing rubric profiles keep their pinned weights; `RubricRows` is filled the next time a rubric is activated.
+- If `LESSON_GRADER_SETTINGS` ever contained a Gemini key (old "Save All Settings"), it is ignored and removed on the
+  next settings save. **Rotate that Gemini key** (Google AI Studio → API keys) and save the new one via Settings.
+
+### 6.4 Removed
+
+| Item | Reason |
+|---|---|
+| Fake "evidence anchors" (`Page 1 … Iterative Test 1`) in the studio | Invented evidence locations |
+| "Generate Formative Rubric" button | Fabricated generic criteria and outcome codes; result was discarded. Server function kept (labelled template-only) for compatibility |
+| Settings thresholds/deductions UI | Never affected grading (misleading). Workbook `Setup` sheet is the policy source |
+| Old single-file `WebApp.html` contents | Replaced by shell + partials; same file name and `doGet` contract |
+| Old `docs/preview-mock.cjs` and UI tests contents | Rewritten for the new API and UI (files kept) |
+
+No source file was deleted.
+
+### 6.5 Final verification (Phase 7)
+
+| Command | Baseline | Final |
+|---|---|---|
+| `npm run check` | pass (12 files) | pass (25 files, load-order independence, rendered page, client↔server API map, explicit scopes) |
+| `npm test` | 53 pass / 0 fail | **111 pass / 0 fail** (14 suites) |
+| Headless Chromium (Playwright 1.56, mock preview) at 360 / 768 / 1280 px | not run | no horizontal scroll, 16px body text, flagged-first order on 360px, no console errors |
+
+Everything above is **mocked or emulated**. No live Apps Script deployment, Classroom, Drive, Sheets, Gemini, Qwen or
+JEV was reachable. See ACCEPTANCE.md and docs/LIVE_TESTING.md.
+
+### 6.6 Remaining risks
+
+1. **Grading policy** (SC19, SC18, rule 4): B/D values, level-override rule, "bottom of band" rule and whether overall
+   boundaries must change with the target reference points are unresolved. Current weights stay in force.
+2. **Classroom grade write-back** only works for assignments created by this script's Cloud project; others need
+   manual entry. Private comments cannot be written by the API.
+3. **JEV/Qwen** contracts are assumed OpenAI-compatible (A2, A3); unverified.
+4. **Voice input** depends on the browser's Web Speech API (Chrome/Edge/Android Chrome; Safari partial; Firefox none).
+5. **Drive Markdown export** (`text/markdown`) is used for Docs with a plain-text fallback; PDFs are not converted to
+   text (they go to Gemini directly, or are disclosed as unreadable for JEV).
+6. Legacy Sheets Studio still has the `window.opener` dictation defect and its own Jewellery-only paths.

@@ -1,3 +1,7 @@
+> **Superseded (15 Oct 2026).** This document describes the pre-review prototype and contains claims that were not
+> true of the code (e.g. messages "sent", register "updated", settings thresholds affecting grades). Use
+> [README.md](../README.md), [REVIEW.md](../REVIEW.md) and [ACCEPTANCE.md](../ACCEPTANCE.md) instead. Kept for history.
+
 # Teacher's Studio — Lesson Grader Implementation & Deployment Guide
 
 **Status (26 September 2026):** Complete Teacher's Studio platform upgrade supporting universal project rubrics, deterministic scoring, Drive audit integration, and teacher-controlled moderation. Fully tested with 53 automated unit and integration tests.

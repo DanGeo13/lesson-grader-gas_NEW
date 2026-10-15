@@ -77,6 +77,10 @@ The page first tries a normal cross-origin `fetch`; if the browser blocks it (Ap
 
 ## Known limits
 
+- **Embedding is off by default.** HtmlService blocks framing by other sites unless the owner sets the Script
+  Property `LESSON_GRADER_ALLOW_EMBED=true` (which also allows clickjacking-style framing by any site). Without it,
+  use *Open in tab*.
+
 - **Third-party cookies.** An embedded Apps Script app needs Google cookies inside a frame. Safari blocks them;
   Chrome does so under strict tracking protection. Symptom: a blank frame or a sign-in loop. Fix:
   *Settings → Always open in a new tab*. This is a browser rule, not a deployment fault.
